@@ -1,0 +1,40 @@
+{
+  "name": "@ambient-code/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Ambient Code Platform - delegate agentic sessions to Kubernetes-hosted Claude agents",
+  "type": "module",
+  "bin": {
+    "mcp-ambient-code": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node",
+    "dev": "bun run src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ambient-code",
+    "openshift",
+    "kubernetes",
+    "claude",
+    "ai-agent"
+  ],
+  "author": "Ambient Code",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ambient-code/mcp.git"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.15.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
