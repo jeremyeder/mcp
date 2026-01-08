@@ -73,12 +73,12 @@ Add to `~/.config/opencode/opencode.json`:
 
 These clients use the standard MCP config format. Add to:
 
-| Client                   | Config file                                                       |
-| ------------------------ | ----------------------------------------------------------------- |
-| Claude Desktop (macOS)   | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| Claude Desktop (Windows) | `%APPDATA%\Claude\claude_desktop_config.json`                     |
-| Claude Code CLI          | `~/.claude/settings.json`                                         |
-| OpenAI Codex CLI         | `~/.codex/config.json`                                            |
+| Client                   | Config file                                                       | Docs                                                          |
+| ------------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------- |
+| Claude Desktop (macOS)   | `~/Library/Application Support/Claude/claude_desktop_config.json` | [docs](https://modelcontextprotocol.io/quickstart/user)       |
+| Claude Desktop (Windows) | `%APPDATA%\Claude\claude_desktop_config.json`                     | [docs](https://modelcontextprotocol.io/quickstart/user)       |
+| Claude Code CLI          | `~/.claude/settings.json`                                         | [docs](https://docs.anthropic.com/en/docs/claude-code/mcp)    |
+| OpenAI Codex CLI         | `~/.codex/config.json`                                            | [docs](https://github.com/openai/codex/blob/main/docs/mcp.md) |
 
 ```json
 {
