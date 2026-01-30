@@ -12,63 +12,67 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 import yaml
 
+from utils.pylogger import get_python_logger
+from mcp_acp.settings import ClustersConfig, Settings, load_clusters_config, load_settings
+
+# Initialize structured logger
+logger = get_python_logger()
+
 
 class ACPClient:
-    """Client for interacting with ACP via OpenShift CLI."""
+    """Client for interacting with ACP via OpenShift CLI.
+
+    Attributes:
+        settings: Global settings instance
+        clusters_config: Cluster configuration instance
+        config: Raw cluster configuration (for backward compatibility)
+    """
 
     # Security constants
-    MAX_COMMAND_TIMEOUT = 300  # 5 minutes max for any command
-    MAX_LOG_LINES = 10000  # Prevent memory exhaustion from logs
     ALLOWED_RESOURCE_TYPES = {"agenticsession", "pods", "event"}  # Whitelist
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None, settings: Optional[Settings] = None):
         """Initialize ACP client.
 
         Args:
-            config_path: Path to clusters.yaml config file
+            config_path: Path to clusters.yaml config file (deprecated, use settings)
+            settings: Settings instance. If not provided, loads default settings.
         """
-        self.config_path = config_path or str(
-            Path.home() / ".config" / "acp" / "clusters.yaml"
-        )
-        self.config = self._load_config()
-        self._validate_config()
+        # Load or use provided settings
+        self.settings = settings or load_settings()
 
-    def _load_config(self) -> Dict[str, Any]:
-        """Load cluster configuration from YAML file."""
-        config_file = Path(self.config_path)
-        if not config_file.exists():
-            return {"clusters": {}, "default_cluster": None}
+        # Override config path if provided (for backward compatibility)
+        if config_path:
+            self.settings.config_path = Path(config_path)
 
-        # Security: Ensure path is within user's home directory
+        # Load cluster configuration
         try:
-            config_file = config_file.resolve()
-            if not str(config_file).startswith(str(Path.home())):
-                raise ValueError("Config file must be within user's home directory")
-        except (ValueError, RuntimeError) as e:
-            raise ValueError(f"Invalid config path: {e}")
+            self.clusters_config = load_clusters_config(self.settings)
+        except Exception as e:
+            logger.error("cluster_config_load_failed", error=str(e))
+            raise
 
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
-            if config is None:
-                return {"clusters": {}, "default_cluster": None}
-            if not isinstance(config, dict):
-                raise ValueError("Invalid config format: must be a dictionary")
-            return config
+        # Backward compatibility: expose raw config
+        self.config = {
+            "clusters": {
+                name: {
+                    "server": cluster.server,
+                    "default_project": cluster.default_project,
+                    "description": cluster.description,
+                }
+                for name, cluster in self.clusters_config.clusters.items()
+            },
+            "default_cluster": self.clusters_config.default_cluster,
+        }
+        self.config_path = str(self.settings.config_path)
 
-    def _validate_config(self) -> None:
-        """Validate configuration structure and values."""
-        if not isinstance(self.config.get("clusters", {}), dict):
-            raise ValueError("Invalid config: 'clusters' must be a dictionary")
+        logger.info(
+            "acp_client_initialized",
+            clusters=list(self.clusters_config.clusters.keys()),
+            default_cluster=self.clusters_config.default_cluster,
+        )
 
-        for cluster_name, cluster_config in self.config.get("clusters", {}).items():
-            if not isinstance(cluster_config, dict):
-                raise ValueError(f"Invalid cluster config for '{cluster_name}'")
-            if "server" not in cluster_config:
-                raise ValueError(f"Cluster '{cluster_name}' missing 'server' field")
-            # Validate server URL format
-            server = cluster_config["server"]
-            if not isinstance(server, str) or not (server.startswith("https://") or server.startswith("http://")):
-                raise ValueError(f"Cluster '{cluster_name}' has invalid server URL")
+    # Note: _load_config and _validate_config removed - now handled by Pydantic settings
 
     def _validate_input(self, value: str, field_name: str, max_length: int = 253) -> None:
         """Validate input to prevent injection attacks.

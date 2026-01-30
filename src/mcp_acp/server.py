@@ -1,7 +1,6 @@
 """MCP server for Ambient Code Platform management."""
 
 import asyncio
-import logging
 import os
 from typing import Any, Callable, Dict, Optional, Tuple
 
@@ -9,7 +8,9 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 
+from utils.pylogger import get_python_logger
 from .client import ACPClient
+from .settings import load_settings
 from .formatters import (
     format_bulk_result,
     format_cluster_operation,
@@ -24,9 +25,8 @@ from .formatters import (
     format_workflows,
 )
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Initialize structured logger
+logger = get_python_logger()
 
 # Create MCP server instance
 app = Server("mcp-acp")
