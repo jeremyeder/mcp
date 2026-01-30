@@ -56,45 +56,26 @@ This MCP server provides 19 comprehensive tools for interacting with the Ambient
 
 ## Features
 
-### Priority 0 - Critical Features
-
-- **acp_list_sessions**: Enhanced filtering by status, display name, age, and sorting
-- **acp_delete_session**: Delete sessions with dry-run preview
-
-### Priority 1 - Important Features
-
-- **acp_restart_session**: Restart stopped sessions
+- **acp_add_cluster**: Add new cluster configurations
 - **acp_bulk_delete_sessions**: Delete multiple sessions at once
 - **acp_bulk_stop_sessions**: Stop multiple running sessions
+- **acp_clone_session**: Clone existing session configurations
+- **acp_create_session_from_template**: Create sessions from predefined templates
+- **acp_delete_session**: Delete sessions with dry-run preview
+- **acp_export_session**: Export session data for archival
 - **acp_get_session_logs**: Retrieve container logs for debugging
+- **acp_get_session_metrics**: Get usage statistics and analytics
+- **acp_get_session_transcript**: Retrieve conversation history
 - **acp_list_clusters**: List configured cluster aliases
+- **acp_list_sessions**: Enhanced filtering by status, display name, age, and sorting
+- **acp_list_workflows**: Discover available workflows
+- **acp_login**: Web-based authentication flow
+- **acp_restart_session**: Restart stopped sessions
+- **acp_switch_cluster**: Switch between configured clusters
+- **acp_update_session**: Update session metadata
 - **acp_whoami**: Check authentication status
 
-### Priority 2 - Power User Features
-
-- **acp_clone_session**: Clone existing session configurations
-- **acp_get_session_transcript**: Retrieve conversation history
-- **acp_update_session**: Update session metadata
-- **acp_export_session**: Export session data for archival
-
-### Priority 3 - Advanced Features
-
-- **acp_get_session_metrics**: Get usage statistics and analytics
-- **acp_list_workflows**: Discover available workflows
-- **acp_create_session_from_template**: Create sessions from predefined templates
-
-### Authentication & Clusters
-
-- **acp_login**: Web-based authentication flow
-- **acp_switch_cluster**: Switch between configured clusters
-- **acp_add_cluster**: Add new cluster configurations
-
-### Dry-Run Mode
-
-All mutating operations support a `dry_run` parameter:
-- Preview changes before executing
-- See detailed information about what would happen
-- Safe for testing and validation
+**Dry-Run Mode**: All mutating operations support a `dry_run` parameter for safe preview before executing.
 
 ---
 
