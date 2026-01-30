@@ -1,0 +1,46 @@
+# Example cluster configuration for MCP ACP Server
+# Copy this file to ~/.config/acp/clusters.yaml and customize
+
+clusters:
+  # Example staging cluster
+  vteam-stage:
+    server: https://api.vteam-stage.7fpc.p3.openshiftapps.com:443
+    description: "V-Team Staging Environment"
+    default_project: jeder-workspace
+
+  # Example production cluster
+  vteam-prod:
+    server: https://api.vteam-prod.xxxx.p3.openshiftapps.com:443
+    description: "V-Team Production"
+    default_project: jeder-workspace
+
+  # Example development cluster
+  local-crc:
+    server: https://api.crc.testing:6443
+    description: "Local CodeReady Containers"
+    default_project: default
+
+  # Add more clusters as needed
+  # cluster-name:
+  #   server: https://api.cluster.example.com:443
+  #   description: "Cluster Description"
+  #   default_project: my-project
+
+# Default cluster to use when not specified
+default_cluster: vteam-stage
+
+# Configuration Notes:
+# - server: Full OpenShift API server URL including port
+# - description: Human-readable description (optional)
+# - default_project: Default project/namespace for this cluster (optional)
+# - default_cluster: The cluster to use by default (optional)
+
+# Authentication:
+# Authentication is handled separately via 'oc login' commands.
+# This config file only stores cluster aliases and metadata.
+# You must authenticate to each cluster before using it:
+#   oc login --server=https://api.cluster.example.com:443
+
+# Security:
+# This file does NOT contain credentials or tokens.
+# It's safe to commit to version control (with sensitive URLs removed).
