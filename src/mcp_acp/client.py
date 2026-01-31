@@ -246,7 +246,7 @@ class ACPClient:
         if resource_type not in self.ALLOWED_RESOURCE_TYPES:
             raise ValueError(f"Resource type '{resource_type}' not allowed")
         self._validate_input(namespace, "namespace")
-        if selector and not re.match(r"^[a-zA-Z0-9=,_-]+$", selector):
+        if selector and not re.match(r"^[a-zA-Z0-9=,_.\-/]+$", selector):
             raise ValueError(f"Invalid label selector format: {selector}")
 
         args = ["get", resource_type, "-n", namespace, "-o", "json"]
