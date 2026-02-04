@@ -8,7 +8,7 @@ on:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
-    environment: pypi  # Reuse existing pypi environment from agentready
+    environment: testpypi  # Use dedicated Test PyPI environment
     permissions:
       id-token: write  # Required for trusted publishing to Test PyPI
       contents: read
