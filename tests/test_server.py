@@ -265,9 +265,7 @@ class TestServerTools:
             assert len(result) == 1
             assert "Success" in result[0].text
 
-            mock_client.delete_session.assert_called_once_with(
-                project="test-project", session="test-session", dry_run=False
-            )
+            mock_client.delete_session.assert_called_once_with(project="test-project", session="test-session")
 
     @pytest.mark.asyncio
     async def test_call_tool_list_sessions(self) -> None:
@@ -328,11 +326,12 @@ class TestServerTools:
                 {
                     "project": "test-project",
                     "sessions": ["s1", "s2"],
+                    "confirm": True,
                 },
             )
 
             assert len(result) == 1
-            assert "Successfully deleted 2 session(s)" in result[0].text
+            assert "Successfully deleted 2 resource(s)" in result[0].text
 
     @pytest.mark.asyncio
     async def test_call_tool_bulk_stop(self) -> None:
@@ -346,11 +345,12 @@ class TestServerTools:
                 {
                     "project": "test-project",
                     "sessions": ["s1", "s2"],
+                    "confirm": True,
                 },
             )
 
             assert len(result) == 1
-            assert "Successfully stopd 2 session(s)" in result[0].text
+            assert "Successfully stopd 2 resource(s)" in result[0].text
 
     @pytest.mark.asyncio
     async def test_call_tool_get_logs(self) -> None:

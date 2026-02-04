@@ -199,14 +199,14 @@ class TestACPClient:
 
         with patch.object(
             client,
-            "_run_oc_command",
+            "_get_resource_json",
             new_callable=AsyncMock,
-            return_value=MagicMock(returncode=0, stdout=json.dumps(mock_session).encode()),
+            return_value=mock_session,
         ):
             result = await client.delete_session(project="test-project", session="test-session", dry_run=True)
 
-            assert result["deleted"] is False
             assert result["dry_run"] is True
+            assert result["success"] is True
             assert "Would delete" in result["message"]
             assert "session_info" in result
 
@@ -279,14 +279,25 @@ class TestACPClient:
         """Test bulk session stop."""
         sessions = ["session-1", "session-2"]
 
-        with patch.object(
-            client,
-            "_run_oc_command",
-            new_callable=AsyncMock,
-        ) as mock_cmd:
-            # Both patches succeed
-            mock_cmd.return_value = MagicMock(returncode=0, stderr=b"")
+        mock_session = {
+            "metadata": {"name": "session-1"},
+            "status": {"phase": "running"},
+        }
 
+        with (
+            patch.object(
+                client,
+                "_get_resource_json",
+                new_callable=AsyncMock,
+                return_value=mock_session,
+            ),
+            patch.object(
+                client,
+                "_run_oc_command",
+                new_callable=AsyncMock,
+                return_value=MagicMock(returncode=0, stderr=b""),
+            ),
+        ):
             result = await client.bulk_stop_sessions(project="test-project", sessions=sessions)
 
             assert len(result["stopped"]) == 2

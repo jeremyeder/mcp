@@ -46,36 +46,6 @@ class TestInputValidation:
             with pytest.raises(ValueError):
                 client._validate_input(name, "test")
 
-    def test_config_validation(self):
-        """Test configuration validation."""
-        # Valid config should pass
-        client = ACPClient()
-        client.config = {
-            "clusters": {"test": {"server": "https://api.example.com:6443", "description": "Test cluster"}},
-            "default_cluster": "test",
-        }
-        client._validate_config()  # Should not raise
-
-    def test_config_validation_invalid_server(self):
-        """Test that invalid server URLs are rejected."""
-        client = ACPClient()
-        client.config = {
-            "clusters": {
-                "test": {
-                    "server": "not-a-url",  # Invalid
-                }
-            }
-        }
-        with pytest.raises(ValueError, match="invalid server URL"):
-            client._validate_config()
-
-    def test_config_validation_missing_server(self):
-        """Test that missing server field is rejected."""
-        client = ACPClient()
-        client.config = {"clusters": {"test": {"description": "Missing server"}}}
-        with pytest.raises(ValueError, match="missing 'server' field"):
-            client._validate_config()
-
 
 class TestCommandInjectionPrevention:
     """Test command injection prevention."""

@@ -576,6 +576,45 @@ async def list_tools() -> list[Tool]:
     ]
 
 
+# Async wrapper functions for confirmation-protected bulk operations
+def create_bulk_wrappers(client: ACPClient) -> dict[str, Callable]:
+    """Create async wrapper functions for bulk operations with confirmation.
+
+    Args:
+        client: ACP client instance
+
+    Returns:
+        Dict of wrapper function names to async functions
+    """
+
+    async def bulk_delete_wrapper(**args):
+        return await _check_confirmation_then_execute(client.bulk_delete_sessions, args, "delete")
+
+    async def bulk_stop_wrapper(**args):
+        return await _check_confirmation_then_execute(client.bulk_stop_sessions, args, "stop")
+
+    async def bulk_delete_by_label_wrapper(**args):
+        return await _check_confirmation_then_execute(client.bulk_delete_sessions_by_label, args, "delete")
+
+    async def bulk_stop_by_label_wrapper(**args):
+        return await _check_confirmation_then_execute(client.bulk_stop_sessions_by_label, args, "stop")
+
+    async def bulk_restart_wrapper(**args):
+        return await _check_confirmation_then_execute(client.bulk_restart_sessions, args, "restart")
+
+    async def bulk_restart_by_label_wrapper(**args):
+        return await _check_confirmation_then_execute(client.bulk_restart_sessions_by_label, args, "restart")
+
+    return {
+        "bulk_delete": bulk_delete_wrapper,
+        "bulk_stop": bulk_stop_wrapper,
+        "bulk_delete_by_label": bulk_delete_by_label_wrapper,
+        "bulk_stop_by_label": bulk_stop_by_label_wrapper,
+        "bulk_restart": bulk_restart_wrapper,
+        "bulk_restart_by_label": bulk_restart_by_label_wrapper,
+    }
+
+
 # Tool dispatch table: maps tool names to (handler, formatter) pairs
 def create_dispatch_table(client: ACPClient) -> dict[str, tuple[Callable, Callable]]:
     """Create tool dispatch table.
@@ -586,6 +625,8 @@ def create_dispatch_table(client: ACPClient) -> dict[str, tuple[Callable, Callab
     Returns:
         Dict mapping tool names to (handler, formatter) tuples
     """
+    bulk_wrappers = create_bulk_wrappers(client)
+
     return {
         "acp_delete_session": (
             client.delete_session,
@@ -600,11 +641,11 @@ def create_dispatch_table(client: ACPClient) -> dict[str, tuple[Callable, Callab
             format_result,
         ),
         "acp_bulk_delete_sessions": (
-            lambda **args: _check_confirmation_then_execute(client.bulk_delete_sessions, args, "delete"),
+            bulk_wrappers["bulk_delete"],
             lambda r: format_bulk_result(r, "delete"),
         ),
         "acp_bulk_stop_sessions": (
-            lambda **args: _check_confirmation_then_execute(client.bulk_stop_sessions, args, "stop"),
+            bulk_wrappers["bulk_stop"],
             lambda r: format_bulk_result(r, "stop"),
         ),
         "acp_get_session_logs": (
@@ -641,19 +682,19 @@ def create_dispatch_table(client: ACPClient) -> dict[str, tuple[Callable, Callab
             format_sessions_list,
         ),
         "acp_bulk_delete_sessions_by_label": (
-            lambda **args: _check_confirmation_then_execute(client.bulk_delete_sessions_by_label, args, "delete"),
+            bulk_wrappers["bulk_delete_by_label"],
             lambda r: format_bulk_result(r, "delete"),
         ),
         "acp_bulk_stop_sessions_by_label": (
-            lambda **args: _check_confirmation_then_execute(client.bulk_stop_sessions_by_label, args, "stop"),
+            bulk_wrappers["bulk_stop_by_label"],
             lambda r: format_bulk_result(r, "stop"),
         ),
         "acp_bulk_restart_sessions": (
-            lambda **args: _check_confirmation_then_execute(client.bulk_restart_sessions, args, "restart"),
+            bulk_wrappers["bulk_restart"],
             lambda r: format_bulk_result(r, "restart"),
         ),
         "acp_bulk_restart_sessions_by_label": (
-            lambda **args: _check_confirmation_then_execute(client.bulk_restart_sessions_by_label, args, "restart"),
+            bulk_wrappers["bulk_restart_by_label"],
             lambda r: format_bulk_result(r, "restart"),
         ),
         # P2 Tools
