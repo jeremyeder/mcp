@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v0.1.2 (2026-02-10)
+
+### Bug Fixes
+
+- Use sudo to remove root-owned egg-info in release workflow
+  ([`127b208`](https://github.com/ambient-code/mcp/commit/127b208d3d3495ce4789684bd8a878d699445f0d))
+
+The python-semantic-release Docker action runs as root, creating src/mcp_acp.egg-info with root
+  ownership. The subsequent cleanup step fails with "Permission denied" when trying to rm -rf as the
+  runner user. Using sudo resolves this.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+
 ## v0.1.1 (2026-02-10)
 
 ### Bug Fixes
@@ -15,6 +29,11 @@ semantic-release runs setuptools internally via build_command, which creates a s
 Add rm -rf src/*.egg-info before the build step to prevent the collision.
 
 Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+### Chores
+
+- **release**: 0.1.1
+  ([`72f6fef`](https://github.com/ambient-code/mcp/commit/72f6fef5e76cbf88e4030952060fc4ef0cc3ba61))
 
 
 ## v0.1.0 (2026-02-10)
