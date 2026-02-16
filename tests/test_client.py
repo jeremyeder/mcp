@@ -20,7 +20,7 @@ def mock_settings():
 def mock_clusters_config():
     """Create mock clusters config."""
     cluster = MagicMock()
-    cluster.server = "https://api.test.example.com"
+    cluster.server = "https://public-api-test.apps.example.com"
     cluster.default_project = "test-project"
     cluster.description = "Test Cluster"
     cluster.token = "test-token"
@@ -77,6 +77,40 @@ class TestInputValidation:
         """Test bulk operation exceeding limit rejected."""
         with pytest.raises(ValueError, match="limited to 3 items"):
             client._validate_bulk_operation(["s1", "s2", "s3", "s4"], "delete")
+
+
+class TestServerURLValidation:
+    """Tests for server URL validation rejecting K8s API URLs."""
+
+    def test_reject_k8s_api_port(self) -> None:
+        """Direct K8s API URL (port 6443) should be rejected."""
+        from mcp_acp.settings import ClusterConfig
+
+        with pytest.raises(ValueError, match="port 6443"):
+            ClusterConfig(
+                server="https://api.test.example.com:6443",
+                default_project="test-project",
+            )
+
+    def test_accept_gateway_url(self) -> None:
+        """Gateway URL should be accepted."""
+        from mcp_acp.settings import ClusterConfig
+
+        config = ClusterConfig(
+            server="https://public-api-ambient.apps.cluster.example.com",
+            default_project="test-project",
+        )
+        assert config.server == "https://public-api-ambient.apps.cluster.example.com"
+
+    def test_accept_port_443(self) -> None:
+        """Standard HTTPS port should be accepted."""
+        from mcp_acp.settings import ClusterConfig
+
+        config = ClusterConfig(
+            server="https://api.example.com:443",
+            default_project="test-project",
+        )
+        assert config.server == "https://api.example.com:443"
 
 
 class TestTimeParsing:
@@ -155,7 +189,7 @@ class TestWhoami:
         assert result["authenticated"] is True
         assert result["token_valid"] is True
         assert result["cluster"] == "test-cluster"
-        assert result["server"] == "https://api.test.example.com"
+        assert result["server"] == "https://public-api-test.apps.example.com"
 
 
 class TestHTTPRequests:

@@ -14,18 +14,16 @@ DIM = "\033[2;37m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
-MARKER = "HELLO_ACP_SUCCESS"
-
-PLAN = f"""\
+PLAN = """\
 # Plan: Hello ACP
 
 ## Objective
 Prove the full ACP pipeline works end-to-end.
 
 ## Steps
-1. Create `/workspace/hello_acp.py` with: `print('{MARKER}')`
+1. Create `/workspace/hello_acp.py` with: `print('HELLO_ACP_SUCCESS')`
 2. Run it: `python3 /workspace/hello_acp.py`
-3. Confirm output contains `{MARKER}`
+3. Confirm output contains `HELLO_ACP_SUCCESS`
 """
 
 PROMPT = (
@@ -62,59 +60,67 @@ def progress(msg: str) -> None:
     print(f"  {DIM}… {msg}{RESET}", flush=True)
 
 
-async def wait_for_phase(client: ACPClient, project: str, session_name: str, target: str) -> str | None:
-    """Poll until session reaches target phase. Returns the phase reached."""
-    elapsed = 0
-    last_phase = None
-    while elapsed < POLL_TIMEOUT:
-        sessions = await client.list_sessions(project=project)
-        match = next(
-            (s for s in sessions.get("sessions", []) if s["metadata"]["name"] == session_name),
-            None,
-        )
-        if match:
-            phase = match.get("status", {}).get("phase")
-            if phase != last_phase:
-                progress(f"Phase: {phase}")
-                last_phase = phase
-            if phase == target:
-                return phase
-            if phase in ("Failed", "Error"):
-                return phase
-        await asyncio.sleep(POLL_INTERVAL)
-        elapsed += POLL_INTERVAL
-    return last_phase
+def _default_project(client: ACPClient) -> str:
+    """Resolve default project from clusters.yaml config."""
+    default_cluster = client.clusters_config.default_cluster
+    if not default_cluster:
+        raise ValueError("No default_cluster configured")
+    cluster = client.clusters_config.clusters.get(default_cluster)
+    if not cluster or not cluster.default_project:
+        raise ValueError(f"No default_project configured for cluster '{default_cluster}'")
+    return cluster.default_project
 
 
-async def wait_for_marker(client: ACPClient, project: str, session_name: str) -> bool:
-    """Poll logs until MARKER appears or timeout."""
+async def wait_for_status(
+    client: ACPClient,
+    project: str,
+    session_name: str,
+    target: str,
+) -> tuple[str | None, dict]:
+    """Poll until session reaches target status. Returns (status, session_data)."""
     elapsed = 0
-    last_len = 0
+    last_status = None
+    session_data = {}
     while elapsed < POLL_TIMEOUT:
-        logs_result = await client.get_session_logs(
-            project=project, session=session_name, container="ambient-code-runner",
-        )
-        logs_text = logs_result.get("logs", "")
-        if len(logs_text) != last_len:
-            progress(f"Logs: {len(logs_text)} chars")
-            last_len = len(logs_text)
-        if MARKER in logs_text:
-            return True
+        session_data = await client.get_session(project=project, session=session_name)
+        status = session_data.get("status", "")
+        if status != last_status:
+            progress(f"Status: {status}")
+            last_status = status
+        if status.lower() == target.lower():
+            return status, session_data
+        if status.lower() in ("failed", "error"):
+            return status, session_data
         await asyncio.sleep(POLL_INTERVAL)
         elapsed += POLL_INTERVAL
-    return False
+    return last_status, session_data
+
+
+async def wait_for_completion(
+    client: ACPClient,
+    project: str,
+    session_name: str,
+) -> tuple[str | None, dict]:
+    """Poll until session completes (stopped/completed/failed)."""
+    elapsed = 0
+    last_status = None
+    session_data = {}
+    while elapsed < POLL_TIMEOUT:
+        session_data = await client.get_session(project=project, session=session_name)
+        status = session_data.get("status", "")
+        if status != last_status:
+            progress(f"Status: {status}")
+            last_status = status
+        if status.lower() in ("completed", "stopped", "failed", "error"):
+            return status, session_data
+        await asyncio.sleep(POLL_INTERVAL)
+        elapsed += POLL_INTERVAL
+    return last_status, session_data
 
 
 async def main() -> int:
     client = ACPClient()
-
-    # Resolve project
-    default_cluster = client.config.get("default_cluster")
-    cluster_config = client.config.get("clusters", {}).get(default_cluster, {})
-    project = cluster_config.get("default_project")
-    if not project:
-        print(f"No default_project configured for cluster '{default_cluster}'")
-        return 1
+    project = _default_project(client)
 
     # ── Step 1: Show the plan ──
     step(1, "The plan")
@@ -146,65 +152,60 @@ async def main() -> int:
         # ── Step 3: Disconnect ──
         step(3, "Disconnect — session runs autonomously on the cluster")
         print(f"  {DIM}The session is now running on a pod in the cluster.")
-        print(f"  You can close your laptop, go to lunch, whatever.")
+        print("  You can close your laptop, go to lunch, whatever.")
         print(f"  The work continues without you.{RESET}\n")
-        info("Check status", f"acp_list_sessions(project={project!r})")
-        info("View logs", f"acp_get_session_logs(session={session_name!r})")
+        info("Check status", f"acp_get_session(session={session_name!r})")
+        info("List all", f"acp_list_sessions(project={project!r})")
         print()
 
         # ── Step 4: Check session status ──
         step(4, "Check session status")
-        print(f"  {DIM}acp_list_sessions(project={project!r}){RESET}\n")
+        print(f"  {DIM}acp_get_session(session={session_name!r}){RESET}\n")
 
-        phase = await wait_for_phase(client, project, session_name, "Running")
-        if phase in ("Failed", "Error"):
-            warn(f"Session entered phase '{phase}'")
+        status, session_data = await wait_for_status(client, project, session_name, "running")
+        if not status or status.lower() in ("failed", "error"):
+            warn(f"Session entered status '{status}'")
             return 1
-        if phase != "Running":
-            warn(f"Session never reached Running (last: {phase})")
+        if status.lower() != "running":
+            warn(f"Session never reached running (last: {status})")
             return 1
 
         # Show session metadata once running
-        sessions = await client.list_sessions(project=project)
-        match = next(
-            (s for s in sessions.get("sessions", []) if s["metadata"]["name"] == session_name),
-            None,
-        )
-        if match:
-            ok("Session is running")
-            info("Session", session_name)
-            info("Display name", match.get("spec", {}).get("displayName", ""))
-            info("Phase", f"{BOLD}{match.get('status', {}).get('phase')}{RESET}")
-            info("Created", match["metadata"].get("creationTimestamp", ""))
-            info("Model", match.get("spec", {}).get("llmConfig", {}).get("model", ""))
-            repos = match.get("spec", {}).get("repos", [])
-            if repos:
-                for r in repos:
-                    info("Repo", r.get("input", {}).get("url", ""))
+        ok("Session is running")
+        info("Session", session_data.get("id", session_name))
+        info("Display name", session_data.get("displayName", ""))
+        info("Status", f"{BOLD}{session_data.get('status', '')}{RESET}")
+        info("Created", session_data.get("createdAt", ""))
+        model = session_data.get("model", "")
+        if model:
+            info("Model", model)
         print()
 
-        # ── Step 5: Wait for completion via logs ──
-        step(5, "Verify output")
-        print(f"  {DIM}acp_get_session_logs(session={session_name!r}){RESET}\n")
+        # ── Step 5: Wait for completion ──
+        step(5, "Wait for completion")
+        print(f"  {DIM}Polling acp_get_session until session finishes...{RESET}\n")
 
-        found = await wait_for_marker(client, project, session_name)
+        final_status, final_data = await wait_for_completion(client, project, session_name)
 
-        if found:
-            ok(f"Found marker: {MARKER}")
+        if final_status and final_status.lower() in ("completed", "stopped"):
+            ok(f"Session finished — status: {final_status}")
+            completed_at = final_data.get("completedAt", "")
+            if completed_at:
+                info("Completed at", completed_at)
         else:
-            warn(f"Marker '{MARKER}' not found after {POLL_TIMEOUT}s")
+            warn(f"Session did not complete within {POLL_TIMEOUT}s (last: {final_status})")
             return 1
 
         # ── Done ──
         print(f"\n{GREEN}{'═' * 80}")
-        print(f"  SUCCESS — Full pipeline verified")
-        print(f"  Plan -> acp_create_session -> K8s CR -> Operator -> Runner Pod -> Claude -> Done")
+        print("  SUCCESS — Full pipeline verified")
+        print("  Plan -> acp_create_session -> Public API -> K8s CR -> Operator -> Runner -> Done")
         print(f"{'═' * 80}{RESET}\n")
         return 0
 
     finally:
-        # Cleanup
         await client.delete_session(project=project, session=session_name)
+        await client.close()
 
 
 if __name__ == "__main__":

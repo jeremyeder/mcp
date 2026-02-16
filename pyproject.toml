@@ -101,7 +101,7 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 markers = [
-    "integration: requires live cluster access (oc login)",
+    "integration: requires live cluster access (Bearer token)",
 ]
 addopts = [
     "-v",

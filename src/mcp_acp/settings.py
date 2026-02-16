@@ -50,6 +50,13 @@ class ClusterConfig(BaseSettings):
         """Validate server URL format."""
         if not v.startswith(("https://", "http://")):
             raise ValueError("Server URL must start with https:// or http://")
+        # Reject direct Kubernetes API URLs (port 6443)
+        if ":6443" in v:
+            raise ValueError(
+                "Direct Kubernetes API URLs (port 6443) are not supported. "
+                "Use the public-api gateway URL instead "
+                "(e.g., https://public-api-ambient.apps.cluster.example.com)."
+            )
         # Strip trailing slash for consistency
         return v.rstrip("/")
 

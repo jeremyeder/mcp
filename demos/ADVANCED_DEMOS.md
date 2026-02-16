@@ -2,6 +2,8 @@
 
 **Based on actual Claude Code sessions with 200-5000+ messages**
 
+> **Warning:** The tools demonstrated in these advanced demos (e.g., `acp_list_workflows`, `acp_create_session_from_template`, `acp_clone_session`, `acp_get_session_transcript`, `acp_get_session_metrics`, `acp_export_session`, `acp_bulk_create_sessions`, `acp_bulk_stop_sessions`) are **not yet implemented**. These demos showcase aspirational workflows based on real Claude Code sessions. See [issue #27](https://github.com/ambient-code/mcp/issues/27) for the implementation roadmap.
+
 These advanced demos showcase the **11 missing MCP-ACP tools** using real workflow patterns extracted from your Claude Code transcripts.
 
 ---
@@ -164,7 +166,7 @@ Session crashed after analyzing 6/13 features
 
 ## Advanced Tools Coverage
 
-### ✅ Tools Demonstrated in Advanced Demos (11/11 - 100%)
+### Tools Shown in Advanced Demos (aspirational — not yet implemented)
 
 **Session Templates & Workflows:**
 1. acp_list_workflows ✓ (Demo 5)
@@ -185,28 +187,18 @@ Session crashed after analyzing 6/13 features
 10. acp_update_session ✓ (Demo 7)
 11. acp_export_session ✓ (Demo 7)
 
-**NOT Demonstrated:**
-- acp_bulk_delete_sessions (similar to bulk_stop, not needed for demos)
-- acp_delete_session (already shown in Demo 4 as missing feature)
-
 ---
 
-## Combined Coverage: All 7 Demos
+## Combined Coverage
 
-### Basic Demos (1-4): 8 tools
-- acp_whoami
-- acp_list_projects
-- acp_list_sessions
-- acp_get_session
-- acp_create_session
-- acp_stop_session
-- acp_get_events
-- acp_send_message (deprecated)
+### Implemented Tools (shown across all demos)
+- `acp_list_sessions`, `acp_get_session`, `acp_create_session`, `acp_delete_session`
+- `acp_bulk_delete_sessions`, `acp_list_clusters`, `acp_whoami`, `acp_switch_cluster`
 
-### Advanced Demos (5-7): 11 tools
-- All 11 advanced features covered
+### Aspirational Tools (shown in advanced demos 5-8, not yet implemented)
+- All 11 advanced tools listed above
 
-### **Total: 19/19 tools (100% coverage)**
+**Note: Basic demos cover the 8 implemented tools. Advanced demos showcase planned features (see [issue #27](https://github.com/ambient-code/mcp/issues/27)).**
 
 ---
 

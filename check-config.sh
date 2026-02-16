@@ -10,8 +10,15 @@ CONFIG_FILE="$HOME/.config/acp/clusters.yaml"
 if [ -f "$CONFIG_FILE" ]; then
     echo "   ✓ Config file exists: $CONFIG_FILE"
     echo ""
-    echo "   Contents:"
-    cat "$CONFIG_FILE"
+
+    # Check file permissions
+    PERMS=$(stat -f "%Lp" "$CONFIG_FILE" 2>/dev/null || stat -c "%a" "$CONFIG_FILE" 2>/dev/null)
+    if [ "$PERMS" = "600" ]; then
+        echo "   ✓ File permissions: $PERMS (secure)"
+    else
+        echo "   ⚠ File permissions: $PERMS (should be 600 — file contains tokens)"
+        echo "     Fix: chmod 600 $CONFIG_FILE"
+    fi
     echo ""
 
     # Parse and show key values
@@ -28,56 +35,75 @@ with open(config_path) as f:
 default_cluster = config.get("default_cluster")
 print(f"   - default_cluster: {default_cluster}")
 
+clusters = config.get("clusters", {})
+print(f"   - clusters configured: {len(clusters)}")
+
 if default_cluster:
-    cluster_config = config.get("clusters", {}).get(default_cluster, {})
-    print(f"   - server: {cluster_config.get('server')}")
-    print(f"   - default_project: {cluster_config.get('default_project')}")
-    print(f"   - description: {cluster_config.get('description')}")
+    cluster_config = clusters.get(default_cluster, {})
+    server = cluster_config.get("server", "not set")
+    project = cluster_config.get("default_project", "not set")
+    has_token = "yes" if cluster_config.get("token") else "no"
+    description = cluster_config.get("description", "")
+
+    print(f"   - server: {server}")
+    print(f"   - default_project: {project}")
+    print(f"   - token configured: {has_token}")
+    if description:
+        print(f"   - description: {description}")
+
+    # Check for port 6443 (direct K8s API)
+    if ":6443" in server:
+        print()
+        print("   ⚠ WARNING: Server URL uses port 6443 (direct K8s API)")
+        print("     Use the public-api gateway URL instead:")
+        print("     e.g., https://public-api-ambient.apps.cluster.example.com")
 else:
     print("   ⚠ No default_cluster set!")
 PYEOF
     fi
 else
     echo "   ✗ Config file not found: $CONFIG_FILE"
+    echo "     Create it with: mkdir -p ~/.config/acp && cp clusters.yaml.example ~/.config/acp/clusters.yaml"
 fi
 echo ""
 
-# Check current oc context
-echo "2. Current OpenShift context:"
-if command -v oc &> /dev/null; then
-    echo "   Current user: $(oc whoami 2>/dev/null || echo 'not logged in')"
-    echo "   Current server: $(oc whoami --show-server 2>/dev/null || echo 'unknown')"
-    echo "   Current project (oc): $(oc project -q 2>/dev/null || echo 'unknown')"
+# Check ACP_TOKEN environment variable
+echo "2. Checking ACP_TOKEN environment variable:"
+if [ -n "$ACP_TOKEN" ]; then
+    echo "   ✓ ACP_TOKEN is set (${#ACP_TOKEN} characters)"
 else
-    echo "   ✗ oc command not found"
+    echo "   - ACP_TOKEN is not set (will use token from clusters.yaml)"
 fi
 echo ""
 
-# Test MCP server config reading
-echo "3. Test MCP server config reading:"
+# Test MCP server config loading
+echo "3. Test MCP server config loading:"
 if command -v python3 &> /dev/null; then
     python3 << 'PYEOF'
 import sys
 try:
-    # Import the client
-    from mcp_acp.client import ACPClient
+    from mcp_acp.settings import load_settings, load_clusters_config
 
-    # Create client
-    client = ACPClient()
+    settings = load_settings()
+    config = load_clusters_config(settings)
 
-    print(f"   ✓ MCP client initialized")
-    print(f"   Config loaded: {len(client.config.get('clusters', {}))} cluster(s)")
+    print(f"   ✓ Config loaded successfully")
+    print(f"   Clusters: {list(config.clusters.keys())}")
+    print(f"   Default cluster: {config.default_cluster}")
 
-    default_cluster = client.config.get("default_cluster")
-    print(f"   Default cluster: {default_cluster}")
-
-    if default_cluster:
-        cluster_config = client.config.get("clusters", {}).get(default_cluster, {})
-        default_project = cluster_config.get("default_project")
-        print(f"   Default project from config: {default_project}")
+    if config.default_cluster:
+        cluster = config.clusters.get(config.default_cluster)
+        if cluster:
+            has_token = bool(cluster.token)
+            print(f"   Token configured: {'yes' if has_token else 'no'}")
+            print(f"   Server: {cluster.server}")
+            print(f"   Default project: {cluster.default_project}")
 
 except ImportError as e:
     print(f"   ✗ Cannot import mcp_acp: {e}")
+    print(f"     Install with: uv pip install -e '.[dev]'")
+except FileNotFoundError as e:
+    print(f"   ✗ Config file not found: {e}")
 except Exception as e:
     print(f"   ✗ Error: {e}")
 PYEOF
@@ -86,71 +112,19 @@ else
 fi
 echo ""
 
-# Check permissions
-echo "4. Check permissions in configured project:"
-if command -v oc &> /dev/null && command -v python3 &> /dev/null; then
-    python3 << 'PYEOF'
-import yaml
-import subprocess
-from pathlib import Path
-
-config_path = Path.home() / ".config" / "acp" / "clusters.yaml"
-try:
-    with open(config_path) as f:
-        config = yaml.safe_load(f)
-
-    default_cluster = config.get("default_cluster")
-    if default_cluster:
-        cluster_config = config.get("clusters", {}).get(default_cluster, {})
-        default_project = cluster_config.get("default_project")
-
-        if default_project:
-            print(f"   Checking permissions in project: {default_project}")
-
-            # Check if can get agenticsessions
-            result = subprocess.run(
-                ["oc", "auth", "can-i", "get", "agenticsessions.vteam.ambient-code", "-n", default_project],
-                capture_output=True,
-                text=True
-            )
-            can_get = result.stdout.strip() == "yes"
-            print(f"   - Can GET agenticsessions: {'✓ yes' if can_get else '✗ no'}")
-
-            # Check if can list
-            result = subprocess.run(
-                ["oc", "auth", "can-i", "list", "agenticsessions.vteam.ambient-code", "-n", default_project],
-                capture_output=True,
-                text=True
-            )
-            can_list = result.stdout.strip() == "yes"
-            print(f"   - Can LIST agenticsessions: {'✓ yes' if can_list else '✗ no'}")
-
-            if not can_get or not can_list:
-                print(f"\n   ⚠ You need RBAC permissions for agenticsessions in {default_project}")
-                print(f"   Contact your cluster admin or check: oc describe rolebinding -n {default_project}")
-        else:
-            print("   ⚠ No default_project configured")
-    else:
-        print("   ⚠ No default_cluster configured")
-except Exception as e:
-    print(f"   ✗ Error: {e}")
-PYEOF
-fi
-echo ""
-
 echo "=== Summary ==="
 echo "If you see issues above, check:"
-echo "1. clusters.yaml has correct default_cluster and default_project"
-echo "2. You're logged into the correct OpenShift cluster"
-echo "3. You have permissions in the configured default_project"
+echo "1. clusters.yaml has correct server (gateway URL), token, and default_project"
+echo "2. File permissions are 600 (chmod 600 ~/.config/acp/clusters.yaml)"
+echo "3. Bearer token is valid and not expired"
 echo ""
 echo "Example clusters.yaml:"
 echo "---"
 echo "clusters:"
 echo "  my-cluster:"
-echo "    server: https://api.your-cluster.com:6443"
-echo "    default_project: jeder-workspace"
-echo "    description: 'My Cluster'"
+echo "    server: https://public-api-ambient.apps.cluster.example.com"
+echo "    token: your-bearer-token-here"
+echo "    default_project: my-workspace"
 echo ""
 echo "default_cluster: my-cluster"
 echo "---"

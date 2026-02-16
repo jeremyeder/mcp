@@ -4,25 +4,22 @@
 clusters:
   # Example staging cluster
   vteam-stage:
-    server: https://api.vteam-stage.xxxx.p3.openshiftapps.com:443
+    server: https://public-api-ambient.apps.vteam-stage.example.com
+    token: your-bearer-token-here
     description: "ACP Staging Environment"
     default_project: jeder-workspace
 
   # Example production cluster
   vteam-prod:
-    server: https://api.vteam-prod.xxxx.p3.openshiftapps.com:443
+    server: https://public-api-ambient.apps.vteam-prod.example.com
+    token: your-bearer-token-here
     description: "ACP Production"
     default_project: jeder-workspace
 
-  # Example development cluster
-  local-crc:
-    server: https://api.crc.testing:6443
-    description: "Local CodeReady Containers"
-    default_project: default
-
   # Add more clusters as needed
   # cluster-name:
-  #   server: https://api.cluster.example.com:443
+  #   server: https://public-api-ambient.apps.cluster.example.com
+  #   token: your-bearer-token-here
   #   description: "Cluster Description"
   #   default_project: my-project
 
@@ -30,17 +27,17 @@ clusters:
 default_cluster: vteam-stage
 
 # Configuration Notes:
-# - server: Full OpenShift API server URL including port
+# - server: Public API gateway URL (NOT the direct K8s API URL with port 6443)
+# - token: Bearer token for authentication (keep this file secure!)
 # - description: Human-readable description (optional)
-# - default_project: Default project/namespace for this cluster (optional)
+# - default_project: Default project/namespace for this cluster
 # - default_cluster: The cluster to use by default (optional)
 
 # Authentication:
-# Authentication is handled separately via 'oc login' commands.
-# This config file only stores cluster aliases and metadata.
-# You must authenticate to each cluster before using it:
-#   oc login --server=https://api.cluster.example.com:443
+# Each cluster needs a Bearer token for API access.
+# You can also set the ACP_TOKEN environment variable as an override.
 
 # Security:
-# This file does NOT contain credentials or tokens.
-# It's safe to commit to version control (with sensitive URLs removed).
+# This file CONTAINS credentials (Bearer tokens).
+# Set permissions to 0600: chmod 600 ~/.config/acp/clusters.yaml
+# Do NOT commit this file to version control.
