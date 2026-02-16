@@ -2,7 +2,7 @@
 
 > 8 terminal recordings demonstrating MCP-ACP workflows based on real Claude Code sessions
 
-**Coverage:** 19/19 tools (100%) | **Formats:** `.sh`, `.cast`, `.gif`, `.mp4` | **Size:** ~4.2MB
+**Coverage:** 8/8 implemented tools | Demos also showcase aspirational workflows for planned tools | **Formats:** `.sh`, `.cast`, `.gif`, `.mp4` | **Size:** ~4.2MB
 
 **Visual Style:** Black background (`#000000`), white text (`#ffffff`), IBM Plex Mono 14pt, 108×35 terminal
 
@@ -13,7 +13,7 @@
 - [Demo Gallery](#demo-gallery)
   - [Basic Workflows (Demos 1-4)](#basic-workflows-demos-1-4)
   - [Advanced Workflows (Demos 5-8)](#advanced-workflows-demos-5-8)
-- [Tool Coverage (19/19)](#tool-coverage-1919)
+- [Tool Coverage](#tool-coverage)
 - [Business Impact](#business-impact)
 - [Recording Setup](#recording-setup)
   - [Terminal Configuration](#terminal-configuration)
@@ -36,7 +36,7 @@
         <source src="demo-1-discovery.mp4" type="video/mp4">
         Your browser does not support the video tag.
       </video>
-      <p><strong>Tools:</strong> <code>acp_list_projects</code>, <code>acp_list_sessions</code>, <code>acp_get_events</code></p>
+      <p><strong>Tools:</strong> <code>acp_list_projects</code> (aspirational), <code>acp_list_sessions</code>, <code>acp_get_events</code> (aspirational)</p>
       <p>Daily project navigation and session monitoring.</p>
     </td>
     <td width="50%">
@@ -46,7 +46,7 @@
         <source src="demo-2-lifecycle.mp4" type="video/mp4">
         Your browser does not support the video tag.
       </video>
-      <p><strong>Tools:</strong> <code>acp_create_session</code>, <code>acp_get_session</code>, <code>acp_stop_session</code></p>
+      <p><strong>Tools:</strong> <code>acp_create_session</code>, <code>acp_get_session</code>, <code>acp_stop_session</code> (aspirational)</p>
       <p>Create, check status, and stop sessions.</p>
     </td>
   </tr>
@@ -58,7 +58,7 @@
         <source src="demo-3-investigation.mp4" type="video/mp4">
         Your browser does not support the video tag.
       </video>
-      <p><strong>Tools:</strong> <code>acp_list_sessions</code>, <code>acp_get_events</code></p>
+      <p><strong>Tools:</strong> <code>acp_list_sessions</code>, <code>acp_get_events</code> (aspirational)</p>
       <p>Monitor active sessions and retrieve event history.</p>
     </td>
     <td width="50%">
@@ -132,17 +132,11 @@
 
 ---
 
-## Tool Coverage (19/19)
+## Tool Coverage
 
-**Basic (8):** `acp_whoami`, `acp_list_projects`, `acp_list_sessions`, `acp_get_session`, `acp_create_session`, `acp_stop_session`, `acp_get_events`, `acp_send_message`
+**Implemented tools shown in demos:** `acp_whoami`, `acp_list_sessions`, `acp_get_session`, `acp_create_session`, `acp_delete_session`, `acp_bulk_delete_sessions`, `acp_list_clusters`, `acp_switch_cluster`
 
-**Templates (2):** `acp_list_workflows`, `acp_create_session_from_template`
-
-**Recovery (3):** `acp_get_session_transcript`, `acp_restart_session`, `acp_clone_session`
-
-**Bulk (4):** `acp_bulk_create_sessions`, `acp_bulk_stop_sessions`, `acp_bulk_send_message`, `acp_bulk_get_session_metrics`
-
-**Observability (4):** `acp_get_session_metrics`, `acp_get_session_logs`, `acp_update_session`, `acp_export_session`
+**Note:** Demos 5-8 showcase aspirational workflows for tools that are not yet implemented. See [issue #27](https://github.com/ambient-code/mcp/issues/27) for the planned tools roadmap.
 
 ---
 

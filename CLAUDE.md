@@ -84,19 +84,19 @@ uv run python -m mcp_acp.server
 ### Three-Layer Design
 
 **1. MCP Server Layer (`server.py`)**
-- Exposes 27 MCP tools via stdio protocol
-- Schema-driven tool definitions using `SCHEMA_FRAGMENTS`
-- Dispatch table maps tool names to (handler, formatter) pairs
+- Exposes 8 MCP tools via stdio protocol
+- Inline JSON Schema definitions per tool
+- if/elif dispatch in `call_tool()` maps tool names to handlers
 - Server-layer confirmation enforcement for destructive bulk operations
 
 **2. Client Layer (`client.py`)**
-- `ACPClient` wraps OpenShift CLI (`oc`) operations
-- All interactions with Kubernetes happen via subprocess execution
-- Input validation, bulk safety limits, label management
+- `ACPClient` communicates with the public-api gateway via `httpx`
+- All interactions happen via HTTP REST calls with Bearer token auth
+- Input validation (DNS-1123), bulk safety limits
 - Async I/O throughout (all operations are `async def`)
 
 **3. Formatting Layer (`formatters.py`)**
-- Converts raw responses to user-friendly text
+- Converts raw API responses to user-friendly text
 - Handles dry-run output, error states, bulk results
 - Format functions: `format_result()`, `format_bulk_result()`, `format_sessions_list()`, etc.
 
@@ -106,10 +106,10 @@ uv run python -m mcp_acp.server
 MCP Client (Claude Desktop/CLI)
     ↓ MCP stdio protocol
 MCP Server (list_tools, call_tool)
-    ↓ Dispatch table lookup
+    ↓ if/elif dispatch
 ACPClient method (e.g., delete_session)
-    ↓ Input validation + safety checks
-OpenShift CLI (oc delete agenticsession ...)
+    ↓ httpx REST call with Bearer token
+Public API Gateway
     ↓ Kubernetes API
 ACP AgenticSession Resource
 ```
@@ -118,56 +118,14 @@ ACP AgenticSession Resource
 
 ## Key Architectural Patterns
 
-### Schema Fragment Reuse
-
-Tools share common parameter schemas via `SCHEMA_FRAGMENTS` in `server.py`:
-
-```python
-SCHEMA_FRAGMENTS = {
-    "project": {...},
-    "session": {...},
-    "dry_run": {...},
-    "labels_dict": {...},
-    # ... etc
-}
-
-# Build tool schema
-Tool(
-    name="acp_label_resource",
-    inputSchema=create_tool_schema(
-        properties={"resource_type": "resource_type", "labels": "labels_dict"},
-        required=["resource_type", "labels"]
-    )
-)
-```
-
-### Dispatch Table Pattern
-
-`create_dispatch_table()` maps tool names to handler/formatter pairs:
-
-```python
-{
-    "acp_delete_session": (
-        client.delete_session,      # Handler
-        format_result,              # Formatter
-    ),
-    "acp_bulk_delete_sessions": (
-        lambda **args: _check_confirmation_then_execute(...),  # Wrapper for safety
-        lambda r: format_bulk_result(r, "delete"),
-    ),
-}
-```
-
 ### Confirmation Enforcement (Server Layer)
 
 Destructive bulk operations require `confirm=true`:
 
 ```python
-async def _check_confirmation_then_execute(fn, args, operation):
-    """Enforce confirmation at server layer."""
-    if not args.get('dry_run') and not args.get('confirm'):
-        raise ValueError(f"Bulk {operation} requires explicit confirmation.")
-    return await fn(**args)
+# In call_tool():
+if not arguments.get("dry_run") and not arguments.get("confirm"):
+    raise ValueError("Bulk delete requires confirm=true. Use dry_run=true to preview first.")
 ```
 
 ### Bulk Operation Safety (Client Layer)
@@ -175,47 +133,23 @@ async def _check_confirmation_then_execute(fn, args, operation):
 All bulk operations enforce 3-item max:
 
 ```python
-def _validate_bulk_operation(self, items: List[str], operation_name: str):
+def _validate_bulk_operation(self, items: list[str], operation_name: str):
     if len(items) > self.MAX_BULK_ITEMS:  # MAX_BULK_ITEMS = 3
         raise ValueError(f"Bulk {operation_name} limited to 3 items for safety.")
 ```
 
----
+### HTTP Request Pattern
 
-## Label Management System
-
-### Label Format
-
-All user labels are prefixed: `acp.ambient-code.ai/label-{key}={value}`
-
-### Label Operations
+All API calls go through `_request()`:
 
 ```python
-# Individual operations
-await client.label_resource("agenticsession", "session-1", "project", {"env": "dev"})
-await client.unlabel_resource("agenticsession", "session-1", "project", ["env"])
-
-# Bulk operations (max 3 items)
-await client.bulk_label_resources("agenticsession", ["s1", "s2"], "project", {"team": "api"})
-
-# List by label
-await client.list_sessions_by_user_labels("project", labels={"env": "dev"})
-
-# Bulk operations by label (max 3 matched sessions)
-await client.bulk_delete_sessions_by_label("project", labels={"cleanup": "true"})
-```
-
-### Early Validation Pattern
-
-Label-based bulk operations validate count BEFORE processing:
-
-```python
-session_names = [s["metadata"]["name"] for s in sessions]
-if len(session_names) > self.MAX_BULK_ITEMS:
-    raise ValueError(
-        f"Label selector matches {len(session_names)} sessions. "
-        f"Max {self.MAX_BULK_ITEMS} allowed. Refine your labels."
-    )
+async def _request(self, method, path, project, cluster_name=None, json_data=None, params=None):
+    """Make an HTTP request to the public API."""
+    cluster_config = self._get_cluster_config(cluster_name)
+    token = self._get_token(cluster_config)
+    url = f"{cluster_config['server']}{path}"
+    headers = {"Authorization": f"Bearer {token}", "X-Ambient-Project": project}
+    # ... httpx request with error handling
 ```
 
 ---
@@ -231,35 +165,24 @@ def _validate_input(self, value: str, field_name: str):
         raise ValueError(f"{field_name} contains invalid characters")
 ```
 
-**Label selector validation:**
-```python
-if selector and not re.match(r"^[a-zA-Z0-9=,_.\-/]+$", selector):
-    raise ValueError(f"Invalid label selector format: {selector}")
-```
+### HTTP Client Security
 
-### Command Injection Prevention
+- All API calls use Bearer token authentication
+- TLS required (server URLs must start with `https://` or `http://`)
+- Direct Kubernetes API URLs (port 6443) are rejected at config validation
+- Tokens sourced from `clusters.yaml` or `ACP_TOKEN` environment variable
+- Sensitive data (tokens, passwords) filtered from logs
 
-```python
-# Always use asyncio.create_subprocess_exec (NOT shell=True)
-process = await asyncio.create_subprocess_exec(
-    "oc", "delete", "agenticsession", name, "-n", project,
-    stdout=asyncio.subprocess.PIPE,
-    stderr=asyncio.subprocess.PIPE,
-)
-
-# Validate arguments before execution
-for arg in args:
-    if any(char in arg for char in [';', '|', '&', '$', '`', '\n', '\r']):
-        raise ValueError(f"Argument contains suspicious characters: {arg}")
-```
-
-### Resource Type Whitelist
+### Gateway URL Enforcement
 
 ```python
-ALLOWED_RESOURCE_TYPES = {"agenticsession", "pods", "event"}
-
-if resource_type not in self.ALLOWED_RESOURCE_TYPES:
-    raise ValueError(f"Resource type '{resource_type}' not allowed")
+@field_validator("server")
+def validate_server_url(cls, v: str) -> str:
+    if not v.startswith(("https://", "http://")):
+        raise ValueError("Server URL must start with https:// or http://")
+    if ":6443" in v:
+        raise ValueError("Direct Kubernetes API URLs (port 6443) are not supported.")
+    return v.rstrip("/")
 ```
 
 ---
@@ -279,26 +202,29 @@ class TestBulkSafety:
         with pytest.raises(ValueError, match="limited to 3 items"):
             client._validate_bulk_operation(["s1", "s2", "s3", "s4"], "delete")
 
-class TestLabelOperations:
-    """Tests for label operations."""
+class TestHTTPRequests:
+    """Tests for HTTP request handling."""
 
     @pytest.mark.asyncio
-    async def test_label_resource_success(self, client):
-        """Should label resource successfully."""
-        with patch.object(client, "_run_oc_command", return_value=MagicMock(returncode=0)):
-            result = await client.label_resource(...)
-            assert result["labeled"] is True
+    async def test_list_sessions(self, client):
+        """Should list sessions via HTTP."""
+        with patch.object(client, "_get_http_client") as mock_get_client:
+            mock_http_client = AsyncMock()
+            mock_http_client.request = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_http_client
+            result = await client.list_sessions("test-project")
+            assert result["total"] == 1
 ```
 
 ### What to Test
 
-✅ **DO test:**
+**DO test:**
 - Happy path (basic success case)
 - Critical validation (input validation, safety limits)
 - Error conditions users will hit
 - Bulk operation limits
 
-❌ **DON'T test:**
+**DON'T test:**
 - Every possible edge case
 - Implementation details
 - Kubernetes API behavior
@@ -307,11 +233,14 @@ class TestLabelOperations:
 ### Mocking Strategy
 
 ```python
-# ✅ GOOD: Mock external dependencies
-with patch.object(client, "_run_oc_command", return_value=mock_response):
+# GOOD: Mock the HTTP client
+with patch.object(client, "_get_http_client") as mock_get_client:
+    mock_http_client = AsyncMock()
+    mock_http_client.request = AsyncMock(return_value=mock_response)
+    mock_get_client.return_value = mock_http_client
     result = await client.some_method()
 
-# ❌ BAD: Don't mock the method you're testing
+# BAD: Don't mock the method you're testing
 with patch.object(client, "some_method"):
     result = await client.some_method()
 ```
@@ -327,7 +256,8 @@ with patch.object(client, "some_method"):
 ```yaml
 clusters:
   vteam-stage:
-    server: https://api.vteam-stage.example.com:443
+    server: https://public-api-ambient.apps.vteam-stage.example.com
+    token: your-bearer-token-here
     description: "V-Team Staging Environment"
     default_project: my-workspace
 
@@ -342,10 +272,11 @@ Uses Pydantic Settings for configuration:
 class Settings(BaseSettings):
     config_path: Path = Path.home() / ".config" / "acp" / "clusters.yaml"
     log_level: str = "INFO"
-    max_sessions: int = 100
 
-    class Config:
-        env_prefix = "ACP_"  # Environment variables: ACP_LOG_LEVEL, etc.
+    model_config = SettingsConfigDict(
+        env_prefix="MCP_ACP_",
+        case_sensitive=False,
+    )
 ```
 
 ---
@@ -356,9 +287,9 @@ class Settings(BaseSettings):
 src/mcp_acp/
 ├── __init__.py           # Package initialization
 ├── settings.py           # Pydantic settings and config loading
-├── client.py             # ACPClient - OpenShift CLI wrapper (600+ lines)
-├── server.py             # MCP server - tool definitions and dispatch (800+ lines)
-└── formatters.py         # Output formatting functions (400+ lines)
+├── client.py             # ACPClient - httpx REST client
+├── server.py             # MCP server - tool definitions and dispatch
+└── formatters.py         # Output formatting functions
 
 tests/
 ├── test_client.py        # Client unit tests
@@ -377,70 +308,52 @@ utils/
 
 1. **Add client method** in `client.py`:
 ```python
-async def new_operation(self, project: str, param: str) -> Dict[str, Any]:
+async def new_operation(self, project: str, param: str) -> dict[str, Any]:
     """Docstring."""
-    # Validation
     self._validate_input(param, "param")
-    # Execute
-    result = await self._run_oc_command([...])
-    return {"success": True, ...}
+    return await self._request("GET", f"/v1/resource/{param}", project)
 ```
 
-2. **Add schema fragment** in `server.py` (if needed):
-```python
-SCHEMA_FRAGMENTS["new_param"] = {
-    "type": "string",
-    "description": "New parameter description",
-}
-```
-
-3. **Add tool definition** in `list_tools()`:
+2. **Add tool definition** in `list_tools()` in `server.py`:
 ```python
 Tool(
     name="acp_new_operation",
     description="Description of what it does",
-    inputSchema=create_tool_schema(
-        properties={"project": "project", "param": "new_param"},
-        required=["param"]
-    ),
+    inputSchema={
+        "type": "object",
+        "properties": {
+            "project": {"type": "string", "description": "Project/namespace"},
+            "param": {"type": "string", "description": "Parameter"},
+        },
+        "required": ["param"],
+    },
 )
 ```
 
-4. **Add dispatch entry** in `create_dispatch_table()`:
+3. **Add dispatch branch** in `call_tool()` in `server.py`:
 ```python
-"acp_new_operation": (
-    client.new_operation,
-    format_result,
-),
+elif name == "acp_new_operation":
+    result = await client.new_operation(
+        project=arguments.get("project", ""),
+        param=arguments["param"],
+    )
+    text = format_result(result)
 ```
 
-5. **Write unit tests** in `tests/test_client.py`:
+4. **Write unit tests** in `tests/test_client.py`:
 ```python
 class TestNewOperation:
     @pytest.mark.asyncio
     async def test_success(self, client):
-        with patch.object(client, "_run_oc_command", ...):
-            result = await client.new_operation(...)
-            assert result["success"] is True
-```
-
-### Adding Bulk Safety to New Operations
-
-1. Call `_validate_bulk_operation()` early:
-```python
-async def bulk_new_operation(self, items: List[str], ...):
-    self._validate_bulk_operation(items, "operation_name")
-    # ... rest of implementation
-```
-
-2. Add confirmation wrapper in dispatch table:
-```python
-"acp_bulk_new_operation": (
-    lambda **args: _check_confirmation_then_execute(
-        client.bulk_new_operation, args, "operation_name"
-    ),
-    format_bulk_result,
-),
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "ok"}
+        with patch.object(client, "_get_http_client") as mock_get_client:
+            mock_http_client = AsyncMock()
+            mock_http_client.request = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_http_client
+            result = await client.new_operation("test-project", "param-value")
+            assert result["result"] == "ok"
 ```
 
 ---
@@ -450,25 +363,13 @@ async def bulk_new_operation(self, items: List[str], ...):
 ### Enable Verbose Logging
 
 ```bash
-# Set log level via environment variable
-export ACP_LOG_LEVEL=DEBUG
+export MCP_ACP_LOG_LEVEL=DEBUG
 python -m mcp_acp.server
-```
-
-### Test Individual Client Methods
-
-```python
-from mcp_acp.client import ACPClient
-
-client = ACPClient()
-result = await client.list_sessions(project="my-workspace")
-print(result)
 ```
 
 ### Inspect MCP Tool Schemas
 
 ```bash
-# List available tools
 echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' | python -m mcp_acp.server
 ```
 
@@ -479,11 +380,8 @@ echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' | python -m mcp_acp.s
 From `client.py`:
 
 ```python
-ALLOWED_RESOURCE_TYPES = {"agenticsession", "pods", "event"}
 MAX_BULK_ITEMS = 3
-LABEL_PREFIX = "acp.ambient-code.ai/label-"
-MAX_COMMAND_TIMEOUT = 120  # seconds
-MAX_LOG_LINES = 10000
+DEFAULT_TIMEOUT = 30.0  # seconds (httpx request timeout)
 ```
 
 ---
@@ -493,28 +391,31 @@ MAX_LOG_LINES = 10000
 **Core:**
 - `mcp>=1.0.0` - MCP protocol SDK
 - `pydantic>=2.0.0` - Settings and validation
+- `pydantic-settings>=2.0.0` - Environment-based settings
 - `structlog>=25.0.0` - Structured logging
+- `httpx>=0.27.0` - HTTP client for public-api gateway
 - `pyyaml>=6.0` - Config file parsing
 
 **Development:**
 - `pytest>=7.0.0` - Testing framework
 - `pytest-asyncio>=0.21.0` - Async test support
 - `pytest-cov>=4.0.0` - Coverage reporting
-- `ruff>=0.12.0` - Code formatting and linting (replaces black, isort, flake8)
+- `ruff>=0.12.0` - Code formatting and linting
 - `mypy>=1.0.0` - Type checking
 
 **Runtime Requirement:**
-- OpenShift CLI (`oc`) must be installed and in PATH
-- Authenticated session via `oc login`
+- Bearer token configured in `clusters.yaml` or `ACP_TOKEN` environment variable
+- Network access to the public-api gateway
 
 ---
 
 ## Documentation
 
-- **[README.md](README.md)** - Project overview and quick start
-- **[API_REFERENCE.md](API_REFERENCE.md)** - Complete tool specifications
+- **[README.md](README.md)** - Project overview, quick start, and usage guide
+- **[API_REFERENCE.md](API_REFERENCE.md)** - Complete tool specifications (8 tools)
 - **[SECURITY.md](SECURITY.md)** - Security features and threat model
-- **[QUICKSTART.md](QUICKSTART.md)** - Usage examples and workflows
+
+See [issue #27](https://github.com/ambient-code/mcp/issues/27) for 21 planned additional tools.
 
 ---
 
@@ -523,24 +424,22 @@ MAX_LOG_LINES = 10000
 ### When Modifying Bulk Operations
 
 - Always enforce `MAX_BULK_ITEMS = 3` limit
-- Add server-layer confirmation via `_check_confirmation_then_execute()`
-- Include early validation for label-based operations
+- Add server-layer confirmation check in `call_tool()`
 - Support `dry_run` parameter
 - Write focused unit tests
-
-### When Adding Label Support
-
-- Use `LABEL_PREFIX` constant for all user labels
-- Validate label keys/values (max 63 chars, alphanumeric + dash/underscore/dot)
-- Build K8s label selectors with proper prefixes
-- Test with label selector regex: `r"^[a-zA-Z0-9=,_.\-/]+$"`
 
 ### When Working with Async Code
 
 - All client methods are async (`async def`)
 - Use `await` when calling client methods
-- Mock with `AsyncMock` for async functions
+- Mock httpx with `AsyncMock` for async functions
 - Use `@pytest.mark.asyncio` for async tests
+
+### When Adding New Tools
+
+- See [issue #27](https://github.com/ambient-code/mcp/issues/27) for the backlog of planned tools
+- Follow the 4-step pattern: client method -> tool definition -> dispatch branch -> tests
+- All API calls go through `_request()` method
 
 ### Code Quality Standards
 

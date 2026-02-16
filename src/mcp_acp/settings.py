@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from utils.pylogger import get_python_logger
 
@@ -50,6 +50,13 @@ class ClusterConfig(BaseSettings):
         """Validate server URL format."""
         if not v.startswith(("https://", "http://")):
             raise ValueError("Server URL must start with https:// or http://")
+        # Reject direct Kubernetes API URLs (port 6443)
+        if ":6443" in v:
+            raise ValueError(
+                "Direct Kubernetes API URLs (port 6443) are not supported. "
+                "Use the public-api gateway URL instead "
+                "(e.g., https://public-api-ambient.apps.cluster.example.com)."
+            )
         # Strip trailing slash for consistency
         return v.rstrip("/")
 
@@ -172,11 +179,10 @@ class Settings(BaseSettings):
             raise ValueError(f"log_level must be one of {valid_levels}")
         return v_upper
 
-    class Config:
-        """Pydantic config."""
-
-        env_prefix = "MCP_ACP_"
-        case_sensitive = False
+    model_config = SettingsConfigDict(
+        env_prefix="MCP_ACP_",
+        case_sensitive=False,
+    )
 
 
 def load_settings() -> Settings:

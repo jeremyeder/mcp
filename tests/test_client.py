@@ -20,7 +20,7 @@ def mock_settings():
 def mock_clusters_config():
     """Create mock clusters config."""
     cluster = MagicMock()
-    cluster.server = "https://api.test.example.com"
+    cluster.server = "https://public-api-test.apps.example.com"
     cluster.default_project = "test-project"
     cluster.description = "Test Cluster"
     cluster.token = "test-token"
@@ -77,6 +77,40 @@ class TestInputValidation:
         """Test bulk operation exceeding limit rejected."""
         with pytest.raises(ValueError, match="limited to 3 items"):
             client._validate_bulk_operation(["s1", "s2", "s3", "s4"], "delete")
+
+
+class TestServerURLValidation:
+    """Tests for server URL validation rejecting K8s API URLs."""
+
+    def test_reject_k8s_api_port(self) -> None:
+        """Direct K8s API URL (port 6443) should be rejected."""
+        from mcp_acp.settings import ClusterConfig
+
+        with pytest.raises(ValueError, match="port 6443"):
+            ClusterConfig(
+                server="https://api.test.example.com:6443",
+                default_project="test-project",
+            )
+
+    def test_accept_gateway_url(self) -> None:
+        """Gateway URL should be accepted."""
+        from mcp_acp.settings import ClusterConfig
+
+        config = ClusterConfig(
+            server="https://public-api-ambient.apps.cluster.example.com",
+            default_project="test-project",
+        )
+        assert config.server == "https://public-api-ambient.apps.cluster.example.com"
+
+    def test_accept_port_443(self) -> None:
+        """Standard HTTPS port should be accepted."""
+        from mcp_acp.settings import ClusterConfig
+
+        config = ClusterConfig(
+            server="https://api.example.com:443",
+            default_project="test-project",
+        )
+        assert config.server == "https://api.example.com:443"
 
 
 class TestTimeParsing:
@@ -155,7 +189,7 @@ class TestWhoami:
         assert result["authenticated"] is True
         assert result["token_valid"] is True
         assert result["cluster"] == "test-cluster"
-        assert result["server"] == "https://api.test.example.com"
+        assert result["server"] == "https://public-api-test.apps.example.com"
 
 
 class TestHTTPRequests:
@@ -231,3 +265,100 @@ class TestBulkOperations:
             assert len(result["deleted"]) == 2
             assert "s1" in result["deleted"]
             assert "s2" in result["deleted"]
+
+
+class TestCreateSession:
+    """Tests for create_session."""
+
+    @pytest.mark.asyncio
+    async def test_create_session_dry_run(self, client: ACPClient) -> None:
+        """Dry run should return manifest without hitting API."""
+        result = await client.create_session(
+            project="test-project",
+            initial_prompt="Run all tests",
+            display_name="Test Run",
+            repos=["https://github.com/org/repo"],
+            dry_run=True,
+        )
+
+        assert result["dry_run"] is True
+        assert result["success"] is True
+        assert result["project"] == "test-project"
+
+        manifest = result["manifest"]
+        assert manifest["initialPrompt"] == "Run all tests"
+        assert manifest["displayName"] == "Test Run"
+        assert manifest["repos"] == ["https://github.com/org/repo"]
+        assert manifest["interactive"] is False
+        assert manifest["llmConfig"]["model"] == "claude-sonnet-4"
+        assert manifest["timeout"] == 900
+
+    @pytest.mark.asyncio
+    async def test_create_session_dry_run_minimal(self, client: ACPClient) -> None:
+        """Dry run with only required fields should omit optional keys."""
+        result = await client.create_session(
+            project="test-project",
+            initial_prompt="hello",
+            dry_run=True,
+        )
+
+        manifest = result["manifest"]
+        assert "displayName" not in manifest
+        assert "repos" not in manifest
+
+    @pytest.mark.asyncio
+    async def test_create_session_success(self, client: ACPClient) -> None:
+        """Successful creation should return session id and project."""
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = {"id": "compiled-abc12", "status": "creating"}
+
+        with patch.object(client, "_get_http_client") as mock_get_client:
+            mock_http_client = AsyncMock()
+            mock_http_client.request = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_http_client
+
+            result = await client.create_session(
+                project="test-project",
+                initial_prompt="Implement feature X",
+            )
+
+            assert result["created"] is True
+            assert result["session"] == "compiled-abc12"
+            assert result["project"] == "test-project"
+
+    @pytest.mark.asyncio
+    async def test_create_session_api_failure(self, client: ACPClient) -> None:
+        """API failure should return created=False with error message."""
+        mock_response = MagicMock()
+        mock_response.status_code = 400
+        mock_response.json.return_value = {"error": "invalid session spec"}
+        mock_response.text = "invalid session spec"
+
+        with patch.object(client, "_get_http_client") as mock_get_client:
+            mock_http_client = AsyncMock()
+            mock_http_client.request = AsyncMock(return_value=mock_response)
+            mock_get_client.return_value = mock_http_client
+
+            result = await client.create_session(
+                project="test-project",
+                initial_prompt="hello",
+            )
+
+            assert result["created"] is False
+            assert "invalid session spec" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_create_session_custom_model_and_timeout(self, client: ACPClient) -> None:
+        """Custom model and timeout should appear in dry-run manifest."""
+        result = await client.create_session(
+            project="test-project",
+            initial_prompt="hello",
+            model="claude-opus-4",
+            timeout=3600,
+            dry_run=True,
+        )
+
+        manifest = result["manifest"]
+        assert manifest["llmConfig"]["model"] == "claude-opus-4"
+        assert manifest["timeout"] == 3600

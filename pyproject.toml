@@ -100,9 +100,13 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = [
+    "integration: requires live cluster access (Bearer token)",
+]
 addopts = [
     "-v",
     "--strict-markers",
+    "-m", "not integration",
     "--cov=src/mcp_acp",
     "--cov-report=term-missing",
     "--cov-report=html",

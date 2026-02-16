@@ -136,3 +136,27 @@ def format_whoami(result: dict[str, Any]) -> str:
         output += f"\nError: {result['error']}\n"
 
     return output
+
+
+def format_session_created(result: dict[str, Any]) -> str:
+    """Format session creation result with follow-up commands."""
+    if result.get("dry_run"):
+        output = "DRY RUN MODE - No changes made\n\n"
+        output += result.get("message", "")
+        if "manifest" in result:
+            output += f"\n\nManifest:\n{json.dumps(result['manifest'], indent=2)}"
+        return output
+
+    if not result.get("created"):
+        return f"Failed to create session: {result.get('message', 'unknown error')}"
+
+    session = result.get("session", "unknown")
+    project = result.get("project", "unknown")
+
+    output = f"Session created: {session}\n"
+    output += f"Project: {project}\n\n"
+    output += "Check status:\n"
+    output += f'  acp_list_sessions(project="{project}")\n'
+    output += f'  acp_get_session(project="{project}", session="{session}")\n'
+
+    return output

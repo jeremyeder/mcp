@@ -19,6 +19,7 @@ class TestListTools:
         # Session tools
         assert "acp_list_sessions" in tool_names
         assert "acp_get_session" in tool_names
+        assert "acp_create_session" in tool_names
         assert "acp_delete_session" in tool_names
         assert "acp_bulk_delete_sessions" in tool_names
 
@@ -31,7 +32,7 @@ class TestListTools:
     async def test_list_tools_count(self) -> None:
         """Test correct number of tools."""
         tools = await list_tools()
-        assert len(tools) == 7
+        assert len(tools) == 8
 
 
 class TestCallTool:
@@ -72,6 +73,31 @@ class TestCallTool:
 
             assert len(result) == 1
             assert "Success" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_call_tool_create_session(self) -> None:
+        """Test calling create session tool."""
+        mock_client = MagicMock()
+        mock_client.clusters_config = MagicMock()
+        mock_client.clusters_config.default_cluster = "test"
+        mock_client.clusters_config.clusters = {"test": MagicMock(default_project="test-project")}
+        mock_client.create_session = AsyncMock(
+            return_value={
+                "created": True,
+                "session": "compiled-abc12",
+                "project": "test-project",
+                "message": "Session 'compiled-abc12' created in project 'test-project'",
+            }
+        )
+
+        with patch("mcp_acp.server.get_client", return_value=mock_client):
+            result = await call_tool(
+                "acp_create_session",
+                {"project": "test-project", "initial_prompt": "Run tests"},
+            )
+
+            assert len(result) == 1
+            assert "compiled-abc12" in result[0].text
 
     @pytest.mark.asyncio
     async def test_call_tool_bulk_delete_requires_confirm(self) -> None:

@@ -15,6 +15,7 @@ from .formatters import (
     format_bulk_result,
     format_clusters,
     format_result,
+    format_session_created,
     format_sessions_list,
     format_whoami,
 )
@@ -97,6 +98,54 @@ async def list_tools() -> list[Tool]:
                     },
                 },
                 "required": ["session"],
+            },
+        ),
+        Tool(
+            name="acp_create_session",
+            description="Create an ACP AgenticSession with a custom prompt. Useful for offloading plan execution to the cluster. Supports dry-run mode.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project": {
+                        "type": "string",
+                        "description": "Project/namespace name (uses default if not provided)",
+                    },
+                    "initial_prompt": {
+                        "type": "string",
+                        "description": "The prompt/instructions to send to the session",
+                    },
+                    "display_name": {
+                        "type": "string",
+                        "description": "Human-readable display name for the session",
+                    },
+                    "repos": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of repository URLs to clone into the session",
+                    },
+                    "interactive": {
+                        "type": "boolean",
+                        "description": "Create an interactive session (default: false)",
+                        "default": False,
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": "LLM model to use (default: claude-sonnet-4)",
+                        "default": "claude-sonnet-4",
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Session timeout in seconds (default: 900)",
+                        "default": 900,
+                        "minimum": 60,
+                    },
+                    "dry_run": {
+                        "type": "boolean",
+                        "description": "Preview without creating (default: false)",
+                        "default": False,
+                    },
+                },
+                "required": ["initial_prompt"],
             },
         ),
         Tool(
@@ -224,6 +273,19 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 session=arguments["session"],
             )
             text = format_result(result)
+
+        elif name == "acp_create_session":
+            result = await client.create_session(
+                project=arguments.get("project", ""),
+                initial_prompt=arguments["initial_prompt"],
+                display_name=arguments.get("display_name"),
+                repos=arguments.get("repos"),
+                interactive=arguments.get("interactive", False),
+                model=arguments.get("model", "claude-sonnet-4"),
+                timeout=arguments.get("timeout", 900),
+                dry_run=arguments.get("dry_run", False),
+            )
+            text = format_session_created(result)
 
         elif name == "acp_delete_session":
             result = await client.delete_session(

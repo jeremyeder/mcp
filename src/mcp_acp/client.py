@@ -265,6 +265,65 @@ class ACPClient:
 
         return await self._request("GET", f"/v1/sessions/{session}", project)
 
+    async def create_session(
+        self,
+        project: str,
+        initial_prompt: str,
+        display_name: str | None = None,
+        repos: list[str] | None = None,
+        interactive: bool = False,
+        model: str = "claude-sonnet-4",
+        timeout: int = 900,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Create an AgenticSession with a custom prompt.
+
+        Args:
+            project: Project/namespace name
+            initial_prompt: The prompt to send to the session
+            display_name: Optional display name for the session
+            repos: Optional list of repository URLs
+            interactive: Whether to create an interactive session
+            model: LLM model to use
+            timeout: Session timeout in seconds
+            dry_run: Preview without creating
+        """
+        self._validate_input(project, "project")
+
+        session_data: dict[str, Any] = {
+            "initialPrompt": initial_prompt,
+            "interactive": interactive,
+            "llmConfig": {"model": model},
+            "timeout": timeout,
+        }
+
+        if display_name:
+            session_data["displayName"] = display_name
+
+        if repos:
+            session_data["repos"] = repos
+
+        if dry_run:
+            return {
+                "dry_run": True,
+                "success": True,
+                "message": "Would create session with custom prompt",
+                "manifest": session_data,
+                "project": project,
+            }
+
+        try:
+            result = await self._request("POST", "/v1/sessions", project, json_data=session_data)
+            session_id = result.get("id", "unknown")
+            return {
+                "created": True,
+                "session": session_id,
+                "project": project,
+                "message": f"Session '{session_id}' created in project '{project}'",
+            }
+        except (ValueError, TimeoutError) as e:
+            return {"created": False, "message": str(e)}
+
     async def delete_session(self, project: str, session: str, dry_run: bool = False) -> dict[str, Any]:
         """Delete a session.
 
