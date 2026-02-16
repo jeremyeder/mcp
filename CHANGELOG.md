@@ -1,6 +1,178 @@
 # CHANGELOG
 
 
+## v0.2.0 (2026-02-16)
+
+### Bug Fixes
+
+- **ci**: Run ruff in autofix mode ([#25](https://github.com/ambient-code/mcp/pull/25),
+  [`c6c8b2c`](https://github.com/ambient-code/mcp/commit/c6c8b2c8d23a7b36b6f5ab8986acfa2b5a249b7a))
+
+* fix(ci): run ruff in autofix mode
+
+Runs `ruff check --fix` and `ruff format` to apply auto-fixable lint and format corrections, then
+  fails via `git diff --exit-code` if the working tree is dirty — meaning the developer forgot to
+  run ruff locally before pushing. This gives a clear error message pointing them to the fix.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+* style: apply ruff format to client.py
+
+Pre-commit hooks caught one file needing reformatting.
+
+* fix: merge implicit string concatenation for ruff compliance
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+
+* test: rewrite tests for new public-api client
+
+- Remove obsolete tests for oc CLI-based client - Remove test_security.py (tested methods no longer
+  exist) - Add test_formatters.py for output formatting - Update test_client.py for HTTP-based
+  client - Update test_server.py for current 7 tools
+
+All 40 tests pass with 70% coverage.
+
+---------
+
+Co-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+Co-authored-by: Ambient Code <ambient-code@redhat.com>
+
+- **ci**: Use --allow-existing flag for uv venv ([#24](https://github.com/ambient-code/mcp/pull/24),
+  [`3689fd1`](https://github.com/ambient-code/mcp/commit/3689fd1b05b710e621716065e660ddb99ca34b5f))
+
+When the virtual environment cache is restored, the .venv directory already exists, causing `uv
+  venv` to fail. The --allow-existing flag allows uv to reuse or recreate the venv as needed.
+
+Co-authored-by: Ambient Code <ambient-code@redhat.com>
+
+Co-authored-by: Claude Opus 4.5 <noreply@anthropic.com>
+
+- **ci**: Use GitHub App token for semantic-release to bypass branch ruleset
+  ([#32](https://github.com/ambient-code/mcp/pull/32),
+  [`9af787b`](https://github.com/ambient-code/mcp/commit/9af787ba1faacfb47b99e33cd41d109732007db0))
+
+The release workflow was failing because GITHUB_TOKEN (github-actions[bot]) cannot push directly to
+  main when branch protection requires pull requests. On GitHub Free, the built-in GitHub Actions
+  integration cannot be added as a bypass actor in rulesets.
+
+Switch to authenticating via the ambient-code GitHub App using actions/create-github-app-token,
+  which generates a short-lived token that can bypass the "Protect main" ruleset.
+
+Requires repo secrets: RELEASE_APP_ID, RELEASE_APP_PRIVATE_KEY
+
+Co-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+### Features
+
+- Add 18 new MCP tools for session management and observability
+  ([#31](https://github.com/ambient-code/mcp/pull/31),
+  [`8301653`](https://github.com/ambient-code/mcp/commit/8301653446c20aba7afd0d2e59a030b3ac3e56f5))
+
+* feat: add 18 new MCP tools for session management and observability (#27)
+
+Add comprehensive session management and observability tools to the MCP server, expanding from 8 to
+  26 total tools. New capabilities include:
+
+- Session lifecycle: get, update, restart, stop, delete (single + bulk) - Observability: logs,
+  transcript, metrics retrieval - Organization: label/unlabel sessions (single + bulk, by name or
+  label) - Discovery: list sessions filtered by label selectors - Bulk operations:
+  delete/stop/restart/label/unlabel by name or label with dry_run preview, confirm safeguard, and
+  3-item safety limit
+
+All bulk destructive operations require explicit confirm=true and support dry_run=true for safe
+  preview. Label-based bulk ops resolve matching sessions first, then apply the operation.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+* test: fill coverage gaps for bulk operations and server dispatch
+
+Add 32 new tests covering previously untested paths:
+
+Client layer: - _run_bulk dry_run path and partial failure handling - _run_bulk_by_label pipeline
+  (delete/stop/restart by label) - _run_bulk_by_label with no matching sessions -
+  bulk_label_sessions (success + dry_run) - bulk_unlabel_sessions (success + dry_run)
+
+Server dispatch layer: - get_session, create_session_from_template, clone_session, update_session,
+  get_session_logs, get_session_transcript, get_session_metrics, label_resource, unlabel_resource,
+  list_sessions_by_label - Confirmation enforcement for all 8 TOOLS_REQUIRING_CONFIRMATION -
+  Confirmed dispatch for bulk_label, bulk_unlabel, bulk_restart, and all 3 by-label bulk operations
+
+Coverage: 72% → 81% overall (client 70→80%, server 63→83%)
+
+---------
+
+Co-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+- Add acp_create_session tool to submit hpc-style jobs via mcp
+  ([#26](https://github.com/ambient-code/mcp/pull/26),
+  [`4671c81`](https://github.com/ambient-code/mcp/commit/4671c8158340b654f6420dc439e6622522035784))
+
+* feat: add acp_create_session tool and hello-acp integration test
+
+Add acp_create_session MCP tool for submitting AgenticSessions with custom prompts (vs
+  template-only). Extract shared _apply_manifest() helper from create_session_from_template. Fix pod
+  label selector bug in get_session_logs (agenticsession → agentic-session). Add first live
+  integration test that creates a session, polls for marker output in logs, and cleans up.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+* chore: add hello-acp demo (asciinema cast + GIF)
+
+Claude Code UI simulation showing the full acp_create_session flow: dry-run, live creation, status
+  polling, log verification, cleanup, and automated pytest run.
+
+* chore: re-record hello-acp demo with real pytest output
+
+Replace scripted typing-effects demo with raw pytest execution. Simpler script, smaller artifacts
+  (GIF: 1.1MB → 42KB).
+
+* fix: use SettingsConfigDict and re-record demo at 100 cols
+
+Replace deprecated class Config with model_config = SettingsConfigDict() to eliminate
+  PydanticDeprecatedSince20 warning. Re-record demo with 100-col terminal to prevent line wrapping.
+
+* feat: replace pytest demo with full ACP workflow demo
+
+New demo shows the actual user workflow: 1. Display the plan 2. Submit via acp_create_session (real
+  API call) 3. Disconnect — session runs autonomously on cluster 4. Check session status via
+  acp_list_sessions 5. Verify output via acp_get_session_logs
+
+* docs: consolidate QUICKSTART + TRIGGER_PHRASES into README; fix ruff lint
+
+Merge QUICKSTART.md and TRIGGER_PHRASES.md into a single comprehensive README.md with TOC. Delete
+  the redundant files — users no longer need to hop between 4 docs to get started. Update CLAUDE.md
+  cross-references.
+
+Also includes pending fixes for ruff F541 (unnecessary f-strings) in demos/hello-acp-workflow.py
+  that were failing CI, plus prior uncommitted work on the branch: public-api gateway docs,
+  settings, and test updates.
+
+---------
+
+Co-authored-by: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+- Authenticate via public-api gateway instead of OpenShift API
+  ([#23](https://github.com/ambient-code/mcp/pull/23),
+  [`5e4ee66`](https://github.com/ambient-code/mcp/commit/5e4ee6676ca853bba08e1fd224c1f8a6b6e2e416))
+
+Replace direct OpenShift API authentication with HTTP requests to the public-api gateway service.
+  This simplifies the MCP server by removing the oc CLI dependency and aligns with the platform's
+  security model where the public-api is the single entry point for all clients.
+
+Changes: - client.py: Rewrite to use httpx for HTTP requests to public-api - settings.py: Update
+  ClusterConfig to point to public-api URL - server.py: Reduce to 7 supported tools (list, get,
+  delete sessions) - formatters.py: Remove unused formatters - pyproject.toml: Replace aiohttp with
+  httpx, update description
+
+The public-api provides: - GET/POST/DELETE /v1/sessions endpoints - Bearer token auth via
+  Authorization header - Project context via X-Ambient-Project header
+
+Co-authored-by: Ambient Code <ambient-code@redhat.com>
+
+Co-authored-by: Claude Opus 4.5 <noreply@anthropic.com>
+
+
 ## v0.1.3 (2026-02-10)
 
 ### Bug Fixes
@@ -13,6 +185,11 @@ The python-semantic-release Docker action creates dist/ and build/ directories i
   failed trying to write to the root-owned dist/ directory.
 
 Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+### Chores
+
+- **release**: 0.1.3
+  ([`5561a9d`](https://github.com/ambient-code/mcp/commit/5561a9da2e73e4497e13a12560441ff94f7b10cf))
 
 
 ## v0.1.2 (2026-02-10)
