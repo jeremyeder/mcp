@@ -20,6 +20,7 @@ from .formatters import (
     format_logs,
     format_metrics,
     format_result,
+    format_session_created,
     format_sessions_list,
     format_transcript,
     format_whoami,
@@ -513,6 +514,40 @@ async def list_tools() -> list[Tool]:
                 required=["template", "display_name"],
             ),
         ),
+        # Custom Session Creation
+        Tool(
+            name="acp_create_session",
+            description="Create an ACP AgenticSession with a custom prompt. Useful for offloading plan execution to the cluster. Supports dry-run mode.",
+            inputSchema=create_tool_schema(
+                properties={
+                    "project": "project",
+                    "initial_prompt": {
+                        "type": "string",
+                        "description": "The prompt/instructions to send to the session",
+                    },
+                    "display_name": "display_name",
+                    "repos": "repos_list",
+                    "interactive": {
+                        "type": "boolean",
+                        "description": "Create an interactive session (default: false)",
+                        "default": False,
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": "LLM model to use (default: claude-sonnet-4)",
+                        "default": "claude-sonnet-4",
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Session timeout in seconds (default: 900)",
+                        "default": 900,
+                        "minimum": 60,
+                    },
+                    "dry_run": "dry_run",
+                },
+                required=["initial_prompt"],
+            ),
+        ),
         # Auth Enhancement Tools
         Tool(
             name="acp_login",
@@ -726,6 +761,10 @@ def create_dispatch_table(client: ACPClient) -> dict[str, tuple[Callable, Callab
         "acp_create_session_from_template": (
             client.create_session_from_template,
             format_result,
+        ),
+        "acp_create_session": (
+            client.create_session,
+            format_session_created,
         ),
         # Auth Tools
         "acp_login": (

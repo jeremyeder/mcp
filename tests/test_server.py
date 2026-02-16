@@ -9,6 +9,7 @@ from mcp_acp.formatters import (
     format_clusters,
     format_logs,
     format_result,
+    format_session_created,
     format_sessions_list,
     format_whoami,
 )
@@ -445,3 +446,59 @@ class TestServerTools:
 
             assert len(result) == 1
             assert "Unknown tool" in result[0].text
+
+
+class TestFormatSessionCreated:
+    """Tests for format_session_created formatter."""
+
+    def test_dry_run(self) -> None:
+        """Dry run should show manifest."""
+        result = format_session_created(
+            {
+                "dry_run": True,
+                "success": True,
+                "message": "Would create session with custom prompt",
+                "manifest": {"kind": "AgenticSession", "spec": {"initialPrompt": "hello"}},
+                "project": "my-project",
+            }
+        )
+
+        assert "DRY RUN MODE" in result
+        assert "Would create session" in result
+        assert "AgenticSession" in result
+
+    def test_success(self) -> None:
+        """Success should show session name, project, and follow-up commands."""
+        result = format_session_created(
+            {
+                "created": True,
+                "session": "compiled-abc12",
+                "project": "my-project",
+                "message": "ok",
+            }
+        )
+
+        assert "compiled-abc12" in result
+        assert "my-project" in result
+        assert "acp_list_sessions" in result
+        assert "acp_get_session_logs" in result
+
+    def test_failure(self) -> None:
+        """Failure should show error message."""
+        result = format_session_created(
+            {
+                "created": False,
+                "message": "namespace not found",
+            }
+        )
+
+        assert "Failed to create session" in result
+        assert "namespace not found" in result
+
+    def test_tool_registered(self) -> None:
+        """acp_create_session should be in the tool list."""
+        import asyncio
+
+        tools = asyncio.run(list_tools())
+        names = [t.name for t in tools]
+        assert "acp_create_session" in names

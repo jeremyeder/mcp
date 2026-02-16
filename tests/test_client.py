@@ -459,3 +459,154 @@ class TestLabelOperations:
         ):
             with pytest.raises(ValueError, match="Max 3 allowed"):
                 await client.bulk_delete_sessions_by_label("test-project", labels={"cleanup": "true"})
+
+
+class TestCreateSession:
+    """Tests for create_session and _apply_manifest."""
+
+    @pytest.mark.asyncio
+    async def test_create_session_dry_run(self, client: ACPClient) -> None:
+        """Dry run should return manifest without calling oc."""
+        result = await client.create_session(
+            project="test-project",
+            initial_prompt="Run all tests",
+            display_name="Test Run",
+            repos=["https://github.com/org/repo"],
+            dry_run=True,
+        )
+
+        assert result["dry_run"] is True
+        assert result["success"] is True
+        assert result["project"] == "test-project"
+
+        manifest = result["manifest"]
+        assert manifest["kind"] == "AgenticSession"
+        assert manifest["metadata"]["namespace"] == "test-project"
+        assert manifest["metadata"]["generateName"] == "compiled-"
+        assert manifest["spec"]["initialPrompt"] == "Run all tests"
+        assert manifest["spec"]["displayName"] == "Test Run"
+        assert manifest["spec"]["repos"] == ["https://github.com/org/repo"]
+        assert manifest["spec"]["interactive"] is False
+        assert manifest["spec"]["llmConfig"]["model"] == "claude-sonnet-4"
+        assert manifest["spec"]["timeout"] == 900
+
+    @pytest.mark.asyncio
+    async def test_create_session_dry_run_minimal(self, client: ACPClient) -> None:
+        """Dry run with only required fields should omit optional spec keys."""
+        result = await client.create_session(
+            project="test-project",
+            initial_prompt="hello",
+            dry_run=True,
+        )
+
+        manifest = result["manifest"]
+        assert "displayName" not in manifest["spec"]
+        assert "repos" not in manifest["spec"]
+
+    @pytest.mark.asyncio
+    async def test_create_session_success(self, client: ACPClient) -> None:
+        """Successful creation should return session name and project."""
+        created_response = {
+            "metadata": {"name": "compiled-abc12", "namespace": "test-project"},
+        }
+
+        with patch.object(
+            client,
+            "_run_oc_command",
+            new_callable=AsyncMock,
+            return_value=MagicMock(returncode=0, stdout=json.dumps(created_response).encode()),
+        ):
+            result = await client.create_session(
+                project="test-project",
+                initial_prompt="Implement feature X",
+            )
+
+            assert result["created"] is True
+            assert result["session"] == "compiled-abc12"
+            assert result["project"] == "test-project"
+
+    @pytest.mark.asyncio
+    async def test_create_session_oc_failure(self, client: ACPClient) -> None:
+        """oc create failure should return created=False with error message."""
+        with patch.object(
+            client,
+            "_run_oc_command",
+            new_callable=AsyncMock,
+            return_value=MagicMock(returncode=1, stderr=b"namespace not found"),
+        ):
+            result = await client.create_session(
+                project="bad-project",
+                initial_prompt="hello",
+            )
+
+            assert result["created"] is False
+            assert "namespace not found" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_create_session_custom_model_and_timeout(self, client: ACPClient) -> None:
+        """Custom model and timeout should appear in dry-run manifest."""
+        result = await client.create_session(
+            project="test-project",
+            initial_prompt="hello",
+            model="claude-opus-4",
+            timeout=3600,
+            dry_run=True,
+        )
+
+        manifest = result["manifest"]
+        assert manifest["spec"]["llmConfig"]["model"] == "claude-opus-4"
+        assert manifest["spec"]["timeout"] == 3600
+
+    @pytest.mark.asyncio
+    async def test_apply_manifest_cleans_up_temp_file(self, client: ACPClient) -> None:
+        """_apply_manifest should clean up the temp file even on failure."""
+        import glob
+        import tempfile
+
+        temp_dir = tempfile.gettempdir()
+        before = set(glob.glob(f"{temp_dir}/acp-session-*"))
+
+        with patch.object(
+            client,
+            "_run_oc_command",
+            new_callable=AsyncMock,
+            return_value=MagicMock(returncode=1, stderr=b"error"),
+        ):
+            await client._apply_manifest(
+                {
+                    "apiVersion": "v1",
+                    "kind": "Test",
+                    "metadata": {"namespace": "ns"},
+                }
+            )
+
+        after = set(glob.glob(f"{temp_dir}/acp-session-*"))
+        # No new temp files should remain
+        assert after - before == set()
+
+    @pytest.mark.asyncio
+    async def test_create_session_from_template_uses_apply_manifest(self, client: ACPClient) -> None:
+        """create_session_from_template should delegate to _apply_manifest."""
+        with patch.object(
+            client,
+            "_apply_manifest",
+            new_callable=AsyncMock,
+            return_value={
+                "created": True,
+                "session": "triage-xyz",
+                "project": "test-project",
+                "message": "Session 'triage-xyz' created in project 'test-project'",
+            },
+        ) as mock_apply:
+            result = await client.create_session_from_template(
+                project="test-project",
+                template="triage",
+                display_name="Triage Run",
+            )
+
+            assert result["created"] is True
+            assert result["session"] == "triage-xyz"
+            mock_apply.assert_called_once()
+            manifest = mock_apply.call_args[0][0]
+            assert manifest["metadata"]["generateName"] == "triage-"
+            assert manifest["spec"]["workflow"] == "triage"

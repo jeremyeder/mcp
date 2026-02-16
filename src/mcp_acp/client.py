@@ -2,9 +2,11 @@
 
 import asyncio
 import json
+import os
 import re
 import secrets
 import subprocess
+import tempfile
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -187,6 +189,44 @@ class ACPClient:
                 return result
             except subprocess.TimeoutExpired:
                 raise TimeoutError(f"Command timed out after {effective_timeout}s") from None
+
+    async def _apply_manifest(self, manifest: dict[str, Any]) -> dict[str, Any]:
+        """Write a manifest to a secure temp file and apply it via oc create.
+
+        Args:
+            manifest: Kubernetes resource manifest dict
+
+        Returns:
+            Dict with 'created', 'session', 'project', 'message' keys
+        """
+        project = manifest.get("metadata", {}).get("namespace", "unknown")
+        fd, manifest_file = tempfile.mkstemp(suffix=".yaml", prefix=f"acp-session-{secrets.token_hex(8)}-")
+        try:
+            with os.fdopen(fd, "w") as f:
+                yaml.dump(manifest, f)
+
+            result = await self._run_oc_command(["create", "-f", manifest_file, "-o", "json"])
+
+            if result.returncode != 0:
+                return {
+                    "created": False,
+                    "message": f"Failed to create session: {result.stderr.decode()}",
+                }
+
+            created_data = json.loads(result.stdout.decode())
+            session_name = created_data.get("metadata", {}).get("name", "unknown")
+
+            return {
+                "created": True,
+                "session": session_name,
+                "project": project,
+                "message": f"Session '{session_name}' created in project '{project}'",
+            }
+        finally:
+            try:
+                os.unlink(manifest_file)
+            except OSError:
+                pass
 
     async def _get_resource_json(self, resource_type: str, name: str, namespace: str) -> dict[str, Any]:
         """Get a Kubernetes resource as JSON dict.
@@ -1026,7 +1066,7 @@ class ACPClient:
                 raise ValueError(f"tail_lines must be between 1 and {self.MAX_LOG_LINES}")
 
             # Find the pod for this session
-            pods = await self._list_resources_json("pods", project, selector=f"agenticsession={session}")
+            pods = await self._list_resources_json("pods", project, selector=f"agentic-session={session}")
 
             if not pods:
                 return {"logs": "", "error": f"No pods found for session '{session}'"}
@@ -1647,7 +1687,6 @@ class ACPClient:
             }
 
         try:
-            # Create session manifest
             manifest = {
                 "apiVersion": "vteam.ambient-code/v1alpha1",
                 "kind": "AgenticSession",
@@ -1663,40 +1702,69 @@ class ACPClient:
                 },
             }
 
-            # Apply manifest using secure temporary file
-            import os
-            import tempfile
+            return await self._apply_manifest(manifest)
 
-            # Security: Use secure temp file with proper permissions (0600)
-            fd, manifest_file = tempfile.mkstemp(suffix=".yaml", prefix=f"acp-template-{secrets.token_hex(8)}-")
-            try:
-                # Write to file descriptor with secure permissions
-                with os.fdopen(fd, "w") as f:
-                    yaml.dump(manifest, f)
+        except Exception as e:
+            return {"created": False, "message": str(e)}
 
-                result = await self._run_oc_command(["create", "-f", manifest_file, "-o", "json"])
+    async def create_session(
+        self,
+        project: str,
+        initial_prompt: str,
+        display_name: str | None = None,
+        repos: list[str] | None = None,
+        interactive: bool = False,
+        model: str = "claude-sonnet-4",
+        timeout: int = 900,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Create an AgenticSession with a custom prompt.
 
-                if result.returncode != 0:
-                    return {
-                        "created": False,
-                        "message": f"Failed to create session: {result.stderr.decode()}",
-                    }
+        Args:
+            project: Project/namespace name
+            initial_prompt: The prompt to send to the session
+            display_name: Optional display name for the session
+            repos: Optional list of repository URLs
+            interactive: Whether to create an interactive session
+            model: LLM model to use
+            timeout: Session timeout in seconds
+            dry_run: Preview manifest without creating
 
-                created_data = json.loads(result.stdout.decode())
-                session_name = created_data.get("metadata", {}).get("name")
+        Returns:
+            Dict with session creation status
+        """
+        manifest: dict[str, Any] = {
+            "apiVersion": "vteam.ambient-code/v1alpha1",
+            "kind": "AgenticSession",
+            "metadata": {
+                "generateName": "compiled-",
+                "namespace": project,
+            },
+            "spec": {
+                "initialPrompt": initial_prompt,
+                "interactive": interactive,
+                "llmConfig": {"model": model},
+                "timeout": timeout,
+            },
+        }
 
-                return {
-                    "created": True,
-                    "session": session_name,
-                    "message": f"Successfully created session '{session_name}' from template '{template}'",
-                }
-            finally:
-                # Ensure cleanup even if operation fails
-                try:
-                    os.unlink(manifest_file)
-                except OSError:
-                    pass
+        if display_name:
+            manifest["spec"]["displayName"] = display_name
 
+        if repos:
+            manifest["spec"]["repos"] = repos
+
+        if dry_run:
+            return {
+                "dry_run": True,
+                "success": True,
+                "message": "Would create session with custom prompt",
+                "manifest": manifest,
+                "project": project,
+            }
+
+        try:
+            return await self._apply_manifest(manifest)
         except Exception as e:
             return {"created": False, "message": str(e)}
 
